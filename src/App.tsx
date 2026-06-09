@@ -111,6 +111,14 @@ const pages = [
 ] as const;
 
 type PageId = (typeof pages)[number]["id"];
+type CursorMode =
+  | "default"
+  | "hover"
+  | "project"
+  | "heading"
+  | "cta"
+  | "text"
+  | "soundtrack";
 
 declare global {
   interface Window {
@@ -159,10 +167,21 @@ export default function App() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
   const [activePage, setActivePage] = useState<PageId>("story");
   const [isLoaded, setIsLoaded] = useState(false);
-  const [cursor, setCursor] = useState({ x: 0, y: 0, hovering: false });
+  const [cursor, setCursor] = useState({
+    x: 0,
+    y: 0,
+    mode: "default" as CursorMode,
+  });
   const [audioReady, setAudioReady] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [revealReady, setRevealReady] = useState(false);
+  const cursorTrailRef = useRef<HTMLDivElement>(null);
+  const cursorDotRef = useRef<HTMLDivElement>(null);
+  const cursorRingRef = useRef<HTMLDivElement>(null);
+  const ringPos = useRef({ x: 0, y: 0 });
+  const trailPos = useRef({ x: 0, y: 0 });
+  const mousePos = useRef({ x: 0, y: 0 });
+  const rafRef = useRef<number>(0);
   const playerRef = useRef<{ playVideo: () => void; pauseVideo: () => void } | null>(null);
   const shouldAutoplayRef = useRef(false);
 
@@ -217,35 +236,84 @@ export default function App() {
 
   useEffect(() => {
     const finePointer = window.matchMedia("(pointer: fine)");
+    if (!finePointer.matches) return;
 
-    if (!finePointer.matches) {
-      return;
-    }
-
-    const handlePointerMove = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      const hovering =
-        !!target?.closest(
-          "button, a, .project-entry, .contact-link, .page-tab, .inline-toggle",
-        );
-
-      setCursor({
-        x: event.clientX,
-        y: event.clientY,
-        hovering,
-      });
+    const getMode = (target: HTMLElement | null): CursorMode => {
+      if (!target) return "default";
+      if (target.closest(".project-entry")) return "project";
+      if (target.closest(".soundtrack-toggle")) return "soundtrack";
+      if (
+        target.closest(
+          ".scroll-invite, .inline-actions a, .inline-toggle, .cta-link, .page-nav-btn",
+        )
+      ) {
+        return "cta";
+      }
+      if (target.closest("h1, h2, h3")) return "heading";
+      if (target.closest("button, a, .page-tab, .contact-link")) return "hover";
+      if (target.closest("p")) return "text";
+      return "default";
     };
 
-    const handlePointerLeave = () => {
-      setCursor((current) => ({ ...current, hovering: false }));
+    const handleMove = (e: MouseEvent) => {
+      mousePos.current = { x: e.clientX, y: e.clientY };
+      const mode = getMode(e.target as HTMLElement);
+
+      if (cursorDotRef.current) {
+        cursorDotRef.current.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`;
+      }
+
+      setCursor((prev) =>
+        prev.mode !== mode ? { x: e.clientX, y: e.clientY, mode } : prev,
+      );
     };
 
-    window.addEventListener("mousemove", handlePointerMove);
-    window.addEventListener("mouseout", handlePointerLeave);
+    const handleLeave = () => {
+      setCursor((prev) => ({ ...prev, mode: "default" }));
+    };
+
+    const animateRing = () => {
+      const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+      const speed = 0.11;
+      const trailSpeed = 0.06;
+
+      ringPos.current.x = lerp(ringPos.current.x, mousePos.current.x, speed);
+      ringPos.current.y = lerp(ringPos.current.y, mousePos.current.y, speed);
+      trailPos.current.x = lerp(trailPos.current.x, mousePos.current.x, trailSpeed);
+      trailPos.current.y = lerp(trailPos.current.y, mousePos.current.y, trailSpeed);
+
+      if (cursorRingRef.current) {
+        const dx = mousePos.current.x - ringPos.current.x;
+        const dy = mousePos.current.y - ringPos.current.y;
+        const ringVelocity = Math.min(Math.hypot(dx, dy), 120);
+        const ringAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+        const squeeze = 1 + ringVelocity / 140;
+
+        cursorRingRef.current.style.transform = `translate3d(${ringPos.current.x}px, ${ringPos.current.y}px, 0) rotate(${ringAngle}deg) scaleX(${squeeze})`;
+      }
+
+      if (cursorTrailRef.current) {
+        const dx = mousePos.current.x - trailPos.current.x;
+        const dy = mousePos.current.y - trailPos.current.y;
+        const velocity = Math.min(Math.hypot(dx, dy), 120);
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        const stretch = 1 + velocity / 42;
+        const opacity = Math.min(0.16 + velocity / 260, 0.52);
+
+        cursorTrailRef.current.style.transform = `translate3d(${trailPos.current.x}px, ${trailPos.current.y}px, 0) rotate(${angle}deg) scaleX(${stretch})`;
+        cursorTrailRef.current.style.opacity = `${opacity}`;
+      }
+      rafRef.current = requestAnimationFrame(animateRing);
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseout", handleLeave);
+    rafRef.current = requestAnimationFrame(animateRing);
 
     return () => {
-      window.removeEventListener("mousemove", handlePointerMove);
-      window.removeEventListener("mouseout", handlePointerLeave);
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseout", handleLeave);
+      cancelAnimationFrame(rafRef.current);
     };
   }, []);
 
@@ -380,6 +448,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const revealTimers: number[] = [];
     const revealNodes = Array.from(
       document.querySelectorAll<HTMLElement>("[data-reveal]"),
     );
@@ -387,12 +456,32 @@ export default function App() {
     const revealObserver = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("is-visible");
-          }
+          if (!entry.isIntersecting) return;
+          const el = entry.target as HTMLElement;
+          const delay = Number(el.dataset.revealDelay ?? 0);
+
+          const revealTimer = window.setTimeout(() => {
+            el.classList.add("is-visible");
+
+            if (el.dataset.reveal === "stagger-children") {
+              const children = Array.from(
+                el.querySelectorAll<HTMLElement>("[data-stagger-child]"),
+              );
+              children.forEach((child, i) => {
+                const base = Number(el.dataset.staggerBase ?? 80);
+                const childTimer = window.setTimeout(() => {
+                  child.classList.add("is-visible");
+                }, i * base);
+                revealTimers.push(childTimer);
+              });
+            }
+          }, delay);
+          revealTimers.push(revealTimer);
+
+          revealObserver.unobserve(el);
         });
       },
-      { threshold: 0.14, rootMargin: "0px 0px -8% 0px" },
+      { threshold: 0.12, rootMargin: "0px 0px -6% 0px" },
     );
 
     revealNodes.forEach((node) => revealObserver.observe(node));
@@ -440,10 +529,11 @@ export default function App() {
     counterNodes.forEach((node) => counterObserver.observe(node));
 
     return () => {
+      revealTimers.forEach((timer) => window.clearTimeout(timer));
       revealObserver.disconnect();
       counterObserver.disconnect();
     };
-  }, [activePage, storyActive]);
+  }, [activePage, storyActive, revealReady]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -451,10 +541,6 @@ export default function App() {
   }, [activePage]);
 
   const introProgress = Math.min(scrollY / viewportHeight, 1);
-  const backgroundShift = storyActive
-    ? 0
-    : -Math.min(scrollY * 0.045, viewportHeight * 0.18);
-  const backgroundScale = storyActive ? 1.01 : 1.08 - introProgress * 0.04;
   const overlayOpacity = 0.18 + introProgress * 0.36;
 
   const handleEnterStory = () => {
@@ -506,28 +592,30 @@ export default function App() {
         </div>
       </div>
       <div
-        className={`cursor-orb${cursor.hovering ? " is-hovering" : ""}`}
+        ref={cursorTrailRef}
+        className={`cursor-trail cursor-trail--${cursor.mode}`}
         aria-hidden="true"
-        style={{
-          transform: `translate3d(${cursor.x}px, ${cursor.y}px, 0)`,
-        }}
       />
       <div
-        className="background-media intro-background"
+        ref={cursorDotRef}
+        className={`cursor-dot cursor-dot--${cursor.mode}`}
         aria-hidden="true"
-        style={{
-          transform: `translate3d(0, ${backgroundShift}px, 0) scale(${backgroundScale})`,
-        }}
+      />
+      <div
+        ref={cursorRingRef}
+        className={`cursor-ring cursor-ring--${cursor.mode}`}
+        aria-hidden="true"
       >
+        <span className="cursor-label" aria-hidden="true">
+          {cursor.mode === "project" ? "View" : ""}
+          {cursor.mode === "cta" ? "→" : ""}
+          {cursor.mode === "soundtrack" ? "♪" : ""}
+        </span>
+      </div>
+      <div className="background-media intro-background" aria-hidden="true">
         <img src={backgroundAsset} alt="" />
       </div>
-      <div
-        className="background-media story-background"
-        aria-hidden="true"
-        style={{
-          transform: `translate3d(0, ${backgroundShift}px, 0) scale(${backgroundScale})`,
-        }}
-      >
+      <div className="background-media story-background" aria-hidden="true">
         <img src={storyBackgroundAsset} alt="" />
       </div>
       <div className="background-overlay" style={{ opacity: overlayOpacity }} />
@@ -558,14 +646,27 @@ export default function App() {
       <header className="landing-stage">
         <div className="landing-copy" data-reveal>
           <div className="landing-kicker">
-            <span className="kicker-line" />
+            <span
+              className="kicker-line draw-line"
+              data-reveal
+              data-reveal-delay={200}
+            />
             <p className="eyebrow">Welcome to</p>
+            <span
+              className="kicker-line draw-line kicker-line--right"
+              data-reveal
+              data-reveal-delay={200}
+            />
           </div>
-          <h1>
-            Pranav&apos;s
-            <span>Portfolio</span>
+          <h1 data-reveal="stagger-children" data-stagger-base={120}>
+            <span className="headline-line" data-stagger-child>
+              Pranav&apos;s
+            </span>
+            <span className="headline-line accent-line" data-stagger-child>
+              Portfolio
+            </span>
           </h1>
-          <p className="landing-text">
+          <p className="landing-text" data-reveal data-reveal-delay={400}>
             A story about systems, ambition, migration, and the craft of making
             software feel alive.
           </p>
@@ -599,10 +700,12 @@ export default function App() {
 
             {activePage === "story" ? (
               <>
-                <section className="intro-section" data-reveal>
+                <section className="intro-section">
                   <div className="section-rule" aria-hidden="true" />
-                  <p className="eyebrow">Chapter one</p>
-                  <h2 className="hero-title">
+                  <p className="eyebrow" data-reveal="fade-left" data-reveal-delay={0}>
+                    Chapter one
+                  </p>
+                  <h2 className="hero-title" data-reveal="clip-wipe" data-reveal-delay={120}>
                     This is not a normal portfolio. It is a guided read of how I
                     build.
                   </h2>
@@ -655,14 +758,27 @@ export default function App() {
 
                 <section className="chapter-sequence" aria-label="Story chapters">
                   {storyMoments.map((moment) => (
-                    <article className="chapter-panel" key={moment.label} data-reveal>
+                    <article
+                      className="chapter-panel chapter-panel-wrap"
+                      key={moment.label}
+                    >
                       <div className="chapter-marker">
-                        <p className="eyebrow">{moment.label}</p>
+                        <p
+                          className="eyebrow"
+                          data-reveal="fade-left"
+                          data-reveal-delay={0}
+                        >
+                          {moment.label}
+                        </p>
                       </div>
                       <div className="chapter-content">
                         <div className="section-rule" aria-hidden="true" />
-                        <h3>{moment.title}</h3>
-                        <p className="text-scrim">{moment.body}</p>
+                        <h3 data-reveal="clip-wipe" data-reveal-delay={120}>
+                          {moment.title}
+                        </h3>
+                        <p className="text-scrim" data-reveal data-reveal-delay={280}>
+                          {moment.body}
+                        </p>
                       </div>
                     </article>
                   ))}
@@ -676,18 +792,40 @@ export default function App() {
                   <div className="section-rule" aria-hidden="true" />
                   <p className="eyebrow">Timeline</p>
                   <h2>A path that keeps getting broader, but also more specific.</h2>
+                  <div
+                    className="timeline-rule draw-line"
+                    data-reveal
+                    data-reveal-delay={0}
+                    style={{
+                      height: "1px",
+                      background: "rgba(255,255,255,0.15)",
+                      marginBottom: "2rem",
+                      width: "100%",
+                    }}
+                  />
                   <ol className="timeline-track">
                     {timeline.map((item) => (
-                      <li className="timeline-item" key={item.year}>
+                      <li
+                        className="timeline-item dot-pop"
+                        key={item.year}
+                        data-reveal
+                        data-reveal-delay={item === timeline[0] ? 0 : item === timeline[1] ? 150 : 300}
+                      >
                         <p className="timeline-year">{item.year}</p>
-                        <h3>{item.title}</h3>
+                        <h3
+                          className="timeline-title"
+                          data-reveal="clip-wipe"
+                          data-reveal-delay={item === timeline[0] ? 100 : item === timeline[1] ? 250 : 400}
+                        >
+                          {item.title}
+                        </h3>
                         <p className="text-scrim">{item.detail}</p>
                       </li>
                     ))}
                   </ol>
                 </section>
 
-                <section className="proof-section" data-reveal>
+                <section className="proof-section">
                   <div className="section-rule" aria-hidden="true" />
                   <p className="eyebrow">Signals</p>
                   <h2>
@@ -699,6 +837,8 @@ export default function App() {
                       <article
                         className="proof-item"
                         key={point.metric}
+                        data-reveal="scale-pop"
+                        data-reveal-delay={index * 110}
                         style={{ ["--stagger" as string]: `${index % 2 === 0 ? 0 : 2.5}rem` }}
                       >
                         <div
@@ -713,7 +853,7 @@ export default function App() {
                           {point.metric}
                         </div>
                         <div className="proof-caption-rule" aria-hidden="true" />
-                        <p>{point.caption}</p>
+                        <p className="proof-caption">{point.caption}</p>
                       </article>
                     ))}
                   </div>
@@ -722,13 +862,19 @@ export default function App() {
             ) : null}
 
             {activePage === "projects" ? (
-              <section className="projects-section" data-reveal>
+              <section className="projects-section">
                 <div className="section-rule" aria-hidden="true" />
                 <p className="eyebrow">Project chapters</p>
                 <h2>
                   Each project marks a different version of what I was trying to
                   learn how to do.
                 </h2>
+                <div
+                  className="draw-line"
+                  data-reveal
+                  data-reveal-delay={0}
+                  style={{ height: "1px", background: "var(--line-strong)", marginBottom: "0" }}
+                />
                 <div className="projects-index" role="list">
                   {projectChapters.map((project) => (
                     <article
@@ -737,10 +883,29 @@ export default function App() {
                       role="listitem"
                       tabIndex={0}
                       aria-label={`${project.name}, ${project.type}`}
+                      data-reveal
+                      data-reveal-delay={project === projectChapters[0] ? 0 : project === projectChapters[1] ? 100 : project === projectChapters[2] ? 200 : 300}
                     >
-                      <p className="project-role">{project.type}</p>
-                      <h3>{project.name}</h3>
-                      <p className="project-copy text-scrim">{project.copy}</p>
+                      <p className="project-role project-type">{project.type}</p>
+                      <h3>
+                        <span
+                          className="project-name"
+                          data-reveal="fade-left"
+                          data-reveal-delay={project === projectChapters[0] ? 80 : project === projectChapters[1] ? 180 : project === projectChapters[2] ? 280 : 380}
+                        >
+                          {project.name}
+                          <span className="project-arrow" aria-hidden="true">
+                            &rarr;
+                          </span>
+                        </span>
+                      </h3>
+                      <p
+                        className="project-copy text-scrim"
+                        data-reveal="fade-right"
+                        data-reveal-delay={project === projectChapters[0] ? 160 : project === projectChapters[1] ? 260 : project === projectChapters[2] ? 360 : 460}
+                      >
+                        {project.copy}
+                      </p>
                     </article>
                   ))}
                 </div>
@@ -751,7 +916,9 @@ export default function App() {
               <section className="contact-scene" data-reveal>
                 <div className="section-rule" aria-hidden="true" />
                 <p className="eyebrow">Next scene</p>
-                <h2>If this story resonates, the next step is a conversation.</h2>
+                <h2 data-reveal="clip-wipe">
+                  If this story resonates, the next step is a conversation.
+                </h2>
                 <div className="contact-grid">
                   <div className="contact-copy">
                     <p className="closing-copy text-scrim">
@@ -772,6 +939,8 @@ export default function App() {
                       target="_blank"
                       rel="noreferrer"
                       className="contact-link"
+                      data-reveal
+                      data-reveal-delay={0}
                     >
                       LinkedIn <span aria-hidden="true">&rarr;</span>
                     </a>
@@ -780,16 +949,24 @@ export default function App() {
                       target="_blank"
                       rel="noreferrer"
                       className="contact-link"
+                      data-reveal
+                      data-reveal-delay={90}
                     >
                       GitHub <span aria-hidden="true">&rarr;</span>
                     </a>
                     <a
                       href="mailto:pranav20022018@outlook.com"
                       className="contact-link"
+                      data-reveal
+                      data-reveal-delay={180}
                     >
                       pranav20022018@outlook.com <span aria-hidden="true">&rarr;</span>
                     </a>
-                    <div className="contact-link contact-link-static">
+                    <div
+                      className="contact-link contact-link-static"
+                      data-reveal
+                      data-reveal-delay={270}
+                    >
                       Add your phone number here <span aria-hidden="true">&rarr;</span>
                     </div>
                     <div className="contact-script">
@@ -814,7 +991,7 @@ export default function App() {
                 {previousPage ? (
                   <button
                     type="button"
-                    className="inline-toggle"
+                    className="inline-toggle page-nav-btn prev"
                     onClick={() => goToPage(previousPage.id)}
                   >
                     Previous: {previousPage.label} <span aria-hidden="true">&rarr;</span>
@@ -825,7 +1002,7 @@ export default function App() {
                 {nextPage ? (
                   <button
                     type="button"
-                    className="inline-toggle"
+                    className="inline-toggle page-nav-btn next"
                     onClick={() => goToPage(nextPage.id)}
                   >
                     Next: {nextPage.label} <span aria-hidden="true">&rarr;</span>
