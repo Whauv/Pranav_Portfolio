@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { gsap } from "gsap";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 
 const storyMoments = [
   {
@@ -110,6 +111,81 @@ const pages = [
   { id: "contact", label: "Contact" },
 ] as const;
 
+const ORBIT_RINGS = [
+  {
+    text: "DATA",
+    radius: 154,
+    duration: 38,
+    direction: 1,
+    fontSize: 12.5,
+    pulseScale: 1.06,
+    startOffset: 3,
+  },
+  {
+    text: "ML",
+    radius: 136,
+    duration: 32,
+    direction: -1,
+    fontSize: 11.5,
+    pulseScale: 1.065,
+    startOffset: 10,
+  },
+  {
+    text: "PRANAV",
+    radius: 118,
+    duration: 44,
+    direction: 1,
+    fontSize: 11.5,
+    pulseScale: 1.068,
+    startOffset: 17,
+  },
+  {
+    text: "BOULDER",
+    radius: 100,
+    duration: 28,
+    direction: -1,
+    fontSize: 10.5,
+    pulseScale: 1.072,
+    startOffset: 24,
+  },
+  {
+    text: "REACT",
+    radius: 82,
+    duration: 22,
+    direction: 1,
+    fontSize: 10,
+    pulseScale: 1.076,
+    startOffset: 31,
+  },
+  {
+    text: "RESEARCH",
+    radius: 64,
+    duration: 18,
+    direction: -1,
+    fontSize: 9.5,
+    pulseScale: 1.08,
+    startOffset: 38,
+  },
+  {
+    text: "STORY",
+    radius: 46,
+    duration: 14,
+    direction: 1,
+    fontSize: 9,
+    pulseScale: 1.085,
+    startOffset: 45,
+  },
+  {
+    text: "BUILD",
+    radius: 28,
+    duration: 10,
+    direction: -1,
+    fontSize: 8.5,
+    pulseScale: 1.09,
+    startOffset: 52,
+  },
+] as const;
+
 type PageId = (typeof pages)[number]["id"];
 type CursorMode =
   | "default"
@@ -167,6 +243,8 @@ export default function App() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
   const [activePage, setActivePage] = useState<PageId>("story");
   const [isLoaded, setIsLoaded] = useState(false);
+  const [orbitLoading, setOrbitLoading] = useState(false);
+  const [orbitDone, setOrbitDone] = useState(false);
   const [cursor, setCursor] = useState({
     x: 0,
     y: 0,
@@ -174,6 +252,7 @@ export default function App() {
   });
   const [audioReady, setAudioReady] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [devSoundMuted, setDevSoundMuted] = useState(true);
   const [revealReady, setRevealReady] = useState(false);
   const cursorTrailRef = useRef<HTMLDivElement>(null);
   const cursorDotRef = useRef<HTMLDivElement>(null);
@@ -184,6 +263,11 @@ export default function App() {
   const rafRef = useRef<number>(0);
   const playerRef = useRef<{ playVideo: () => void; pauseVideo: () => void } | null>(null);
   const shouldAutoplayRef = useRef(false);
+  const orbitSceneRef = useRef<HTMLDivElement>(null);
+  const orbitRef = useRef<HTMLDivElement>(null);
+  const orbitRafRef = useRef<number>(0);
+  const orbitEnterTimerRef = useRef<number | null>(null);
+  const orbitFinalizeTimerRef = useRef<number | null>(null);
 
   const pageIndex = useMemo(
     () => pages.findIndex((page) => page.id === activePage),
@@ -227,12 +311,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    document.body.style.overflow = storyActive ? "" : "hidden";
+    document.body.style.overflow =
+      storyActive && !orbitLoading ? "" : "hidden";
 
     return () => {
       document.body.style.overflow = "";
     };
-  }, [storyActive]);
+  }, [storyActive, orbitLoading]);
 
   useEffect(() => {
     const finePointer = window.matchMedia("(pointer: fine)");
@@ -240,6 +325,7 @@ export default function App() {
 
     const getMode = (target: HTMLElement | null): CursorMode => {
       if (!target) return "default";
+      if (target.closest(".orbit-rig")) return "hover";
       if (target.closest(".project-entry")) return "project";
       if (target.closest(".soundtrack-toggle")) return "soundtrack";
       if (
@@ -314,6 +400,168 @@ export default function App() {
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseout", handleLeave);
       cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!orbitLoading) return;
+
+    const tick = (time: number) => {
+      if (orbitRef.current) {
+        orbitRef.current.style.transform =
+          `perspective(900px) translateZ(0) rotateZ(${Math.sin(time * 0.00032) * 1.8}deg)`;
+      }
+
+      orbitRafRef.current = requestAnimationFrame(tick);
+    };
+
+    orbitRafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(orbitRafRef.current);
+    };
+  }, [orbitLoading]);
+
+  useEffect(() => {
+    if (!orbitLoading) return;
+    if (!orbitSceneRef.current) return;
+
+    const ctx = gsap.context(() => {
+      ORBIT_RINGS.forEach((ring, index) => {
+        const selector = `.orbit-ring--${index}`;
+        const pathSelector = `.orbit-ring-path--${index}`;
+        const textSelector = `.orbit-ring-text--${index}`;
+
+        gsap.set(selector, {
+          transformOrigin: "50% 50%",
+          "--orbit-breathe": 0.82,
+          opacity: 0.28,
+        });
+
+        gsap.set(pathSelector, {
+          attr: {
+            startOffset: `${ring.startOffset}%`,
+          },
+        });
+
+        gsap.set(textSelector, {
+          opacity: 0.78,
+          letterSpacing: "0.34em",
+        });
+
+        gsap.to(pathSelector, {
+          attr: {
+            startOffset: `${ring.startOffset + ring.direction * 100}%`,
+          },
+          duration: ring.duration,
+          ease: "none",
+          repeat: -1,
+        });
+
+        gsap.to(selector, {
+          "--orbit-breathe": ring.pulseScale,
+          opacity: 1,
+          duration: 2.15,
+          ease: "sine.inOut",
+          repeat: -1,
+          yoyo: true,
+          delay: (ORBIT_RINGS.length - 1 - index) * 0.16,
+        });
+
+        gsap.to(textSelector, {
+          opacity: 1,
+          letterSpacing: "0.46em",
+          duration: 2.15,
+          ease: "sine.inOut",
+          repeat: -1,
+          yoyo: true,
+          delay: (ORBIT_RINGS.length - 1 - index) * 0.16,
+        });
+      });
+
+      gsap.to(".orbit-ambient", {
+        scale: 1.08,
+        opacity: 1,
+        duration: 2.4,
+        ease: "sine.inOut",
+        repeat: -1,
+        yoyo: true,
+      });
+
+      const counterValue = { value: 0 };
+      gsap.to(counterValue, {
+        value: 100,
+        duration: 3.4,
+        ease: "power2.inOut",
+        onUpdate: () => {
+          const counterEl = orbitSceneRef.current?.querySelector<SVGTSpanElement>(
+            ".orbit-counter-value",
+          );
+          if (counterEl) {
+            counterEl.textContent = String(Math.floor(counterValue.value)).padStart(2, "0");
+          }
+        },
+      });
+
+      gsap.fromTo(
+        ".orbit-progress-fill",
+        { width: "0%", opacity: 0 },
+        {
+          width: "100%",
+          opacity: 1,
+          duration: 3.8,
+          ease: "power2.inOut",
+        },
+      );
+    }, orbitSceneRef);
+
+    return () => ctx.revert();
+  }, [orbitLoading]);
+
+  useEffect(() => {
+    if (!orbitDone) return;
+    if (!orbitSceneRef.current) return;
+
+    const ctx = gsap.context(() => {
+      const rings = ORBIT_RINGS.map((_, i) =>
+        `.orbit-ring--${ORBIT_RINGS.length - 1 - i}`,
+      );
+
+      gsap.to(rings, {
+        opacity: 0,
+        scale: 0.85,
+        duration: 0.3,
+        ease: "power3.in",
+        stagger: 0.055,
+      });
+
+      gsap.to(".orbit-counter-group", {
+        opacity: 0,
+        duration: 0.25,
+        delay: 0.52,
+        ease: "power1.out",
+      });
+
+      gsap.to(".orbit-ambient", {
+        opacity: 0,
+        scale: 1.18,
+        duration: 0.35,
+        delay: 0.3,
+        ease: "power2.in",
+      });
+    }, orbitSceneRef);
+
+    return () => ctx.revert();
+  }, [orbitDone]);
+
+  useEffect(() => {
+    return () => {
+      if (orbitEnterTimerRef.current) {
+        window.clearTimeout(orbitEnterTimerRef.current);
+      }
+      if (orbitFinalizeTimerRef.current) {
+        window.clearTimeout(orbitFinalizeTimerRef.current);
+      }
     };
   }, []);
 
@@ -543,17 +791,51 @@ export default function App() {
   const introProgress = Math.min(scrollY / viewportHeight, 1);
   const overlayOpacity = 0.18 + introProgress * 0.36;
 
-  const handleEnterStory = () => {
+  const enterStoryNow = () => {
+    setOrbitLoading(false);
+    setOrbitDone(false);
     setStoryActive(true);
     setActivePage("story");
-    shouldAutoplayRef.current = true;
-    if (audioReady && playerRef.current) {
+    shouldAutoplayRef.current = false;
+    if (!devSoundMuted && audioReady && playerRef.current) {
       playerRef.current.playVideo();
       setAudioPlaying(true);
     }
     window.setTimeout(() => {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }, 220);
+  };
+
+  const handleEnterStory = () => {
+    if (orbitLoading || storyActive) {
+      return;
+    }
+
+    setOrbitLoading(true);
+
+    orbitEnterTimerRef.current = window.setTimeout(() => {
+      setOrbitDone(true);
+
+      orbitFinalizeTimerRef.current = window.setTimeout(() => {
+        enterStoryNow();
+      }, 600);
+    }, 3800);
+  };
+
+  const handleSkipOrbit = () => {
+    if (orbitEnterTimerRef.current) {
+      window.clearTimeout(orbitEnterTimerRef.current);
+      orbitEnterTimerRef.current = null;
+    }
+    if (orbitFinalizeTimerRef.current) {
+      window.clearTimeout(orbitFinalizeTimerRef.current);
+      orbitFinalizeTimerRef.current = null;
+    }
+
+    setOrbitDone(true);
+    orbitFinalizeTimerRef.current = window.setTimeout(() => {
+      enterStoryNow();
+    }, 400);
   };
 
   const toggleSoundtrack = () => {
@@ -568,6 +850,7 @@ export default function App() {
       return;
     }
 
+    setDevSoundMuted(false);
     shouldAutoplayRef.current = true;
     playerRef.current.playVideo();
     setAudioPlaying(true);
@@ -621,6 +904,78 @@ export default function App() {
       <div className="background-overlay" style={{ opacity: overlayOpacity }} />
       <div className="vignette-overlay" aria-hidden="true" />
       <div className="grain-overlay" aria-hidden="true" />
+      {orbitLoading ? (
+        <div
+          ref={orbitSceneRef}
+          className={`orbit-loader-scene${orbitDone ? " is-exiting" : ""}`}
+          aria-label="Loading"
+          role="status"
+        >
+          <div className="orbit-ambient" aria-hidden="true" />
+          <div ref={orbitRef} className="orbit-rig" aria-hidden="true">
+              <svg
+                className="orbit-svg"
+                viewBox="0 0 420 420"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <defs>
+                  {ORBIT_RINGS.map((ring, i) => (
+                    <path
+                      key={`orbit-loader-path-${i}`}
+                      id={`orbit-loader-path-${i}`}
+                      d={`
+                        M ${210 - ring.radius}, 210
+                        a ${ring.radius},${ring.radius} 0 1,1 ${ring.radius * 2},0
+                        a ${ring.radius},${ring.radius} 0 1,1 -${ring.radius * 2},0
+                      `}
+                      fill="none"
+                    />
+                  ))}
+                </defs>
+              {ORBIT_RINGS.map((ring, i) => (
+                <g
+                  key={`ring-${i}`}
+                  className={`orbit-ring orbit-ring--${i}`}
+                >
+                  <text
+                    className={`orbit-ring-text orbit-ring-text--${i}`}
+                    style={{ fontSize: `${ring.fontSize}px` }}
+                  >
+                    <textPath
+                      className={`orbit-ring-path orbit-ring-path--${i}`}
+                      href={`#orbit-loader-path-${i}`}
+                      startOffset={`${ring.startOffset}%`}
+                    >
+                      {ring.text}
+                    </textPath>
+                  </text>
+                </g>
+              ))}
+              </svg>
+
+              <div className="orbit-counter-group">
+                <div className="orbit-counter-ring" />
+                <div className="orbit-counter-number">
+                  <span className="orbit-counter-value">0</span>
+                  <span className="orbit-counter-suffix">%</span>
+                </div>
+              </div>
+          </div>
+          <div className="orbit-text">
+            <p className="orbit-label">entering the story</p>
+            <div className="orbit-progress">
+              <div className="orbit-progress-fill" />
+            </div>
+          </div>
+          <button
+            className="orbit-skip"
+            onClick={handleSkipOrbit}
+            aria-label="Skip loading animation"
+          >
+            skip &rarr;
+          </button>
+        </div>
+      ) : null}
       <div className="intro-veil" aria-hidden="true" />
       <div id="youtube-soundtrack-player" className="youtube-soundtrack-player" />
 
@@ -675,6 +1030,7 @@ export default function App() {
             className="scroll-invite"
             aria-label="Enter the story"
             onClick={handleEnterStory}
+            disabled={orbitLoading}
           >
             Enter the story <span aria-hidden="true">&rarr;</span>
           </button>
