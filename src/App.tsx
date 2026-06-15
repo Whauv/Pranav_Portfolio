@@ -111,80 +111,73 @@ const pages = [
   { id: "contact", label: "Contact" },
 ] as const;
 
-const ORBIT_RINGS = [
-  {
-    text: "DATA",
-    radius: 154,
-    duration: 38,
-    direction: 1,
-    fontSize: 12.5,
-    pulseScale: 1.06,
-    startOffset: 3,
-  },
-  {
-    text: "ML",
-    radius: 136,
-    duration: 32,
-    direction: -1,
-    fontSize: 11.5,
-    pulseScale: 1.065,
-    startOffset: 10,
-  },
-  {
-    text: "PRANAV",
-    radius: 118,
-    duration: 44,
-    direction: 1,
-    fontSize: 11.5,
-    pulseScale: 1.068,
-    startOffset: 17,
-  },
-  {
-    text: "BOULDER",
-    radius: 100,
-    duration: 28,
-    direction: -1,
-    fontSize: 10.5,
-    pulseScale: 1.072,
-    startOffset: 24,
-  },
-  {
-    text: "REACT",
-    radius: 82,
-    duration: 22,
-    direction: 1,
-    fontSize: 10,
-    pulseScale: 1.076,
-    startOffset: 31,
-  },
-  {
-    text: "RESEARCH",
-    radius: 64,
-    duration: 18,
-    direction: -1,
-    fontSize: 9.5,
-    pulseScale: 1.08,
-    startOffset: 38,
-  },
-  {
-    text: "STORY",
-    radius: 46,
-    duration: 14,
-    direction: 1,
-    fontSize: 9,
-    pulseScale: 1.085,
-    startOffset: 45,
-  },
-  {
-    text: "BUILD",
-    radius: 28,
-    duration: 10,
-    direction: -1,
-    fontSize: 8.5,
-    pulseScale: 1.09,
-    startOffset: 52,
-  },
+const chapterDialLabels = [
+  "Story",
+  "Timeline",
+  "Projects",
+  "Contact",
+  "Signals",
+  "Direction",
+  "Systems",
+  "Motion",
 ] as const;
+
+const haloSets = {
+  story: ["Origin", "Systems", "Narrative", "Build", "Clarity", "Craft"],
+  timeline: ["Foundation", "Expansion", "Depth", "Discipline", "Range", "Direction"],
+  projects: ["Auralize", "Quantrisk", "Savant", "Forge", "Aria", "Daemon"],
+  contact: ["Signal", "Conversation", "Ideas", "Systems", "Taste", "Next"],
+} as const;
+
+const signalNodes = [
+  { x: 10, y: 62, size: "sm" },
+  { x: 23, y: 28, size: "md" },
+  { x: 37, y: 46, size: "sm" },
+  { x: 51, y: 18, size: "lg" },
+  { x: 66, y: 40, size: "md" },
+  { x: 84, y: 24, size: "sm" },
+  { x: 72, y: 72, size: "md" },
+  { x: 42, y: 78, size: "sm" },
+  { x: 18, y: 84, size: "sm" },
+] as const;
+
+const signalLinks = [
+  { x1: 10, y1: 62, x2: 23, y2: 28 },
+  { x1: 23, y1: 28, x2: 37, y2: 46 },
+  { x1: 37, y1: 46, x2: 51, y2: 18 },
+  { x1: 51, y1: 18, x2: 66, y2: 40 },
+  { x1: 66, y1: 40, x2: 84, y2: 24 },
+  { x1: 37, y1: 46, x2: 42, y2: 78 },
+  { x1: 42, y1: 78, x2: 72, y2: 72 },
+  { x1: 18, y1: 84, x2: 42, y2: 78 },
+] as const;
+
+const ORBIT_LOADER_CONFIG = {
+  accentColor: "#F5C842",
+  bgColor: "#080808",
+  duration: 4200,
+  ringRadiiBase: [60, 100, 145, 195, 250, 310, 375, 445],
+  rings: [
+    "DATA SCIENCE",
+    "MACHINE LEARNING",
+    "COMPUTER VISION",
+    "NLP",
+    "PYTHON",
+    "PYTORCH",
+    "FULL STACK",
+    "AI ENGINEER",
+  ],
+} as const;
+
+const ORBIT_RINGS = ORBIT_LOADER_CONFIG.rings.map((label, index) => ({
+  label,
+  baseRadius: ORBIT_LOADER_CONFIG.ringRadiiBase[index],
+  duration: 12 + index * 3.2,
+  direction: index % 2 === 0 ? -1 : 1,
+  pulseScale: 1.025 + index * 0.004,
+}));
+
+const ORBIT_LOADER_DURATION_MS = ORBIT_LOADER_CONFIG.duration;
 
 type PageId = (typeof pages)[number]["id"];
 type CursorMode =
@@ -221,6 +214,63 @@ declare global {
   }
 }
 
+function SectionHalo({
+  words,
+  className = "",
+}: {
+  words: readonly string[];
+  className?: string;
+}) {
+  return (
+    <div className={`section-halo ${className}`.trim()} aria-hidden="true">
+      {words.map((word, index) => (
+        <span
+          key={`${word}-${index}`}
+          className="section-halo-word"
+          style={
+            {
+              "--halo-index": index,
+              "--halo-count": words.length,
+            } as CSSProperties
+          }
+        >
+          {word}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function SignalField({ className = "" }: { className?: string }) {
+  return (
+    <div className={`signal-field ${className}`.trim()} aria-hidden="true">
+      <svg viewBox="0 0 100 100" className="signal-field-svg">
+        {signalLinks.map((link, index) => (
+          <line
+            key={`signal-link-${index}`}
+            className="signal-link"
+            x1={link.x1}
+            y1={link.y1}
+            x2={link.x2}
+            y2={link.y2}
+          />
+        ))}
+        {signalNodes.map((node, index) => (
+          <circle
+            key={`signal-node-${index}`}
+            className={`signal-node signal-node--${node.size}`}
+            cx={node.x}
+            cy={node.y}
+            r={node.size === "lg" ? 1.7 : node.size === "md" ? 1.25 : 0.95}
+          />
+        ))}
+      </svg>
+      <span className="signal-pulse signal-pulse--one" />
+      <span className="signal-pulse signal-pulse--two" />
+    </div>
+  );
+}
+
 const backgroundAsset =
   "https://mir-s3-cdn-cf.behance.net/project_modules/disp/6c674e241287029.6953aa1320b47.gif";
 const storyBackgroundAsset =
@@ -236,8 +286,22 @@ function formatCount(
   return `${prefix}${value.toFixed(decimals)}${suffix}`;
 }
 
+function getOrbitFontSize(radius: number) {
+  return Math.max(12, radius * 0.095);
+}
+
+function buildOrbitRingText(label: string, radius: number, fontSize: number) {
+  const arcLength = Math.PI * radius;
+  const segment = `${label} • `;
+  const estimatedCharWidth = fontSize * 0.6;
+  const minCharacters = Math.ceil(arcLength / estimatedCharWidth);
+  const repeatCount = Math.max(2, Math.ceil(minCharacters / segment.length));
+  return Array.from({ length: repeatCount }, () => segment).join("");
+}
+
 export default function App() {
   const [scrollY, setScrollY] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(1);
   const [viewportHeight, setViewportHeight] = useState(1);
   const [storyActive, setStoryActive] = useState(false);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
@@ -266,12 +330,35 @@ export default function App() {
   const orbitSceneRef = useRef<HTMLDivElement>(null);
   const orbitRef = useRef<HTMLDivElement>(null);
   const orbitRafRef = useRef<number>(0);
-  const orbitEnterTimerRef = useRef<number | null>(null);
-  const orbitFinalizeTimerRef = useRef<number | null>(null);
+  const orbitExitRef = useRef<(() => void) | null>(null);
 
   const pageIndex = useMemo(
     () => pages.findIndex((page) => page.id === activePage),
     [activePage],
+  );
+
+  const orbitScale = useMemo(
+    () => Math.max(0.32, Math.min(viewportWidth, viewportHeight) / 1000),
+    [viewportHeight, viewportWidth],
+  );
+
+  const orbitRings = useMemo(
+    () =>
+      ORBIT_RINGS.map((ring) => {
+        const radius = ring.baseRadius * orbitScale;
+        const fontSize = getOrbitFontSize(radius);
+        const repeatedText = buildOrbitRingText(ring.label, radius, fontSize);
+        const halfArcLength = Math.PI * radius;
+
+        return {
+          ...ring,
+          radius,
+          fontSize,
+          repeatedText,
+          textLength: halfArcLength,
+        };
+      }),
+    [orbitScale],
   );
 
   useEffect(() => {
@@ -291,6 +378,7 @@ export default function App() {
 
   useEffect(() => {
     const updateViewport = () => {
+      setViewportWidth(window.innerWidth || 1);
       setViewportHeight(window.innerHeight || 1);
     };
 
@@ -405,165 +493,231 @@ export default function App() {
 
   useEffect(() => {
     if (!orbitLoading) return;
-
-    const tick = (time: number) => {
-      if (orbitRef.current) {
-        orbitRef.current.style.transform =
-          `perspective(900px) translateZ(0) rotateZ(${Math.sin(time * 0.00032) * 1.8}deg)`;
-      }
-
-      orbitRafRef.current = requestAnimationFrame(tick);
-    };
-
-    orbitRafRef.current = requestAnimationFrame(tick);
-
-    return () => {
-      cancelAnimationFrame(orbitRafRef.current);
-    };
-  }, [orbitLoading]);
-
-  useEffect(() => {
-    if (!orbitLoading) return;
     if (!orbitSceneRef.current) return;
 
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    if (prefersReducedMotion) {
+      setOrbitLoading(false);
+      setOrbitDone(false);
+      setStoryActive(true);
+      setActivePage("story");
+      window.dispatchEvent(new CustomEvent("preloaderDone"));
+      return;
+    }
+
+    let exitStarted = false;
+    let counterFrame = 0;
+    let orbitTimeline: gsap.core.Timeline | null = null;
+    let exitTimeline: gsap.core.Timeline | null = null;
+
+    const finishOrbitLoader = () => {
+      setOrbitLoading(false);
+      setOrbitDone(false);
+      setStoryActive(true);
+      setActivePage("story");
+      shouldAutoplayRef.current = false;
+      if (!devSoundMuted && audioReady && playerRef.current) {
+        playerRef.current.playVideo();
+        setAudioPlaying(true);
+      }
+      window.dispatchEvent(new CustomEvent("preloaderDone"));
+      window.setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }, 220);
+    };
+
+    const runOrbitExit = () => {
+      if (exitStarted || !orbitSceneRef.current) return;
+      exitStarted = true;
+      orbitTimeline?.pause();
+      cancelAnimationFrame(counterFrame);
+
+      const ringSelectors = orbitRings
+        .map((_, index) => `.orbit-ring--${index}`)
+        .reverse();
+
+      exitTimeline = gsap.timeline({
+        defaults: { ease: "power3.inOut" },
+        onComplete: finishOrbitLoader,
+      });
+
+      exitTimeline
+        .to(
+          ringSelectors,
+          {
+            opacity: 0,
+            scale: 0.86,
+            duration: 0.34,
+            stagger: 0.08,
+          },
+          0,
+        )
+        .to(
+          ".orbit-counter-group, .orbit-center-label, .orbit-progress, .orbit-skip",
+          {
+            opacity: 0,
+            duration: 0.28,
+          },
+          0.12,
+        )
+        .to(
+          ".orbit-ambient",
+          {
+            opacity: 0,
+            scale: 1.12,
+            duration: 0.36,
+          },
+          0.18,
+        )
+        .to(
+          ".orbit-loader-scene",
+          {
+            opacity: 0,
+            duration: 0.4,
+          },
+          0.42,
+        );
+    };
+
+    orbitExitRef.current = runOrbitExit;
+
     const ctx = gsap.context(() => {
-      ORBIT_RINGS.forEach((ring, index) => {
+      orbitRings.forEach((ring, index) => {
         const selector = `.orbit-ring--${index}`;
-        const pathSelector = `.orbit-ring-path--${index}`;
+        const topPathSelector = `.orbit-ring-path-top--${index}`;
+        const bottomPathSelector = `.orbit-ring-path-bottom--${index}`;
         const textSelector = `.orbit-ring-text--${index}`;
+        const randomOffset = Math.random() * 100;
 
         gsap.set(selector, {
           transformOrigin: "50% 50%",
-          "--orbit-breathe": 0.82,
-          opacity: 0.28,
+          scale: 1,
+          opacity: 0.35,
         });
 
-        gsap.set(pathSelector, {
-          attr: {
-            startOffset: `${ring.startOffset}%`,
-          },
+        gsap.set([topPathSelector, bottomPathSelector], {
+          attr: { startOffset: `${randomOffset}%` },
         });
 
         gsap.set(textSelector, {
-          opacity: 0.78,
-          letterSpacing: "0.34em",
+          opacity: index % 2 === 0 ? 0.85 : 0.58,
+          letterSpacing: "0.15em",
         });
+      });
 
-        gsap.to(pathSelector, {
-          attr: {
-            startOffset: `${ring.startOffset + ring.direction * 100}%`,
+      orbitTimeline = gsap.timeline({ repeat: -1 });
+
+      orbitRings.forEach((ring, index) => {
+        const selector = `.orbit-ring--${index}`;
+        const topPathSelector = `.orbit-ring-path-top--${index}`;
+        const bottomPathSelector = `.orbit-ring-path-bottom--${index}`;
+        const textSelector = `.orbit-ring-text--${index}`;
+        const randomOffset = Math.random() * 100;
+        const breatheDelay = (orbitRings.length - 1 - index) * 0.12;
+
+        orbitTimeline?.to(
+          [topPathSelector, bottomPathSelector],
+          {
+            attr: { startOffset: `${randomOffset + ring.direction * 100}%` },
+            duration: ring.duration,
+            ease: "none",
           },
-          duration: ring.duration,
-          ease: "none",
-          repeat: -1,
-        });
+          0,
+        );
 
-        gsap.to(selector, {
-          "--orbit-breathe": ring.pulseScale,
-          opacity: 1,
-          duration: 2.15,
-          ease: "sine.inOut",
-          repeat: -1,
-          yoyo: true,
-          delay: (ORBIT_RINGS.length - 1 - index) * 0.16,
-        });
+        orbitTimeline?.to(
+          selector,
+          {
+            scale: ring.pulseScale,
+            opacity: 1,
+            duration: 2.4,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat: 1,
+          },
+          breatheDelay,
+        );
 
-        gsap.to(textSelector, {
-          opacity: 1,
-          letterSpacing: "0.46em",
-          duration: 2.15,
-          ease: "sine.inOut",
-          repeat: -1,
-          yoyo: true,
-          delay: (ORBIT_RINGS.length - 1 - index) * 0.16,
-        });
+        orbitTimeline?.to(
+          textSelector,
+          {
+            letterSpacing: "0.17em",
+            opacity: index % 2 === 0 ? 0.96 : 0.76,
+            duration: 2.4,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat: 1,
+          },
+          breatheDelay,
+        );
       });
 
-      gsap.to(".orbit-ambient", {
-        scale: 1.08,
-        opacity: 1,
-        duration: 2.4,
-        ease: "sine.inOut",
-        repeat: -1,
-        yoyo: true,
-      });
-
-      const counterValue = { value: 0 };
-      gsap.to(counterValue, {
-        value: 100,
-        duration: 3.4,
-        ease: "power2.inOut",
-        onUpdate: () => {
-          const counterEl = orbitSceneRef.current?.querySelector<SVGTSpanElement>(
-            ".orbit-counter-value",
-          );
-          if (counterEl) {
-            counterEl.textContent = String(Math.floor(counterValue.value)).padStart(2, "0");
-          }
+      orbitTimeline.to(
+        ".orbit-ambient",
+        {
+          scale: 1.08,
+          opacity: 1,
+          duration: 2.4,
+          ease: "sine.inOut",
+          yoyo: true,
+          repeat: 1,
         },
-      });
+        0,
+      );
 
       gsap.fromTo(
         ".orbit-progress-fill",
-        { width: "0%", opacity: 0 },
+        { scaleX: 0, opacity: 0.2 },
         {
-          width: "100%",
+          scaleX: 1,
           opacity: 1,
-          duration: 3.8,
-          ease: "power2.inOut",
+          transformOrigin: "left center",
+          duration: ORBIT_LOADER_DURATION_MS / 1000,
+          ease: "power1.inOut",
         },
       );
     }, orbitSceneRef);
 
-    return () => ctx.revert();
-  }, [orbitLoading]);
+    const easeInOutCubic = (t: number) =>
+      t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-  useEffect(() => {
-    if (!orbitDone) return;
-    if (!orbitSceneRef.current) return;
+    const counterEl = orbitSceneRef.current.querySelector<HTMLElement>(
+      ".orbit-counter-value",
+    );
+    const startTime = performance.now();
 
-    const ctx = gsap.context(() => {
-      const rings = ORBIT_RINGS.map((_, i) =>
-        `.orbit-ring--${ORBIT_RINGS.length - 1 - i}`,
+    const animateCounter = (now: number) => {
+      const progress = Math.min(
+        (now - startTime) / ORBIT_LOADER_DURATION_MS,
+        1,
       );
+      const eased = easeInOutCubic(progress);
+      const value = Math.round(eased * 100);
 
-      gsap.to(rings, {
-        opacity: 0,
-        scale: 0.85,
-        duration: 0.3,
-        ease: "power3.in",
-        stagger: 0.055,
-      });
-
-      gsap.to(".orbit-counter-group", {
-        opacity: 0,
-        duration: 0.25,
-        delay: 0.52,
-        ease: "power1.out",
-      });
-
-      gsap.to(".orbit-ambient", {
-        opacity: 0,
-        scale: 1.18,
-        duration: 0.35,
-        delay: 0.3,
-        ease: "power2.in",
-      });
-    }, orbitSceneRef);
-
-    return () => ctx.revert();
-  }, [orbitDone]);
-
-  useEffect(() => {
-    return () => {
-      if (orbitEnterTimerRef.current) {
-        window.clearTimeout(orbitEnterTimerRef.current);
+      if (counterEl) {
+        counterEl.textContent = String(value);
       }
-      if (orbitFinalizeTimerRef.current) {
-        window.clearTimeout(orbitFinalizeTimerRef.current);
+
+      if (progress < 1) {
+        counterFrame = window.requestAnimationFrame(animateCounter);
+      } else {
+        runOrbitExit();
       }
     };
-  }, []);
+
+    counterFrame = window.requestAnimationFrame(animateCounter);
+
+    return () => {
+      orbitExitRef.current = null;
+      cancelAnimationFrame(counterFrame);
+      orbitTimeline?.kill();
+      exitTimeline?.kill();
+      ctx.revert();
+    };
+  }, [audioReady, audioPlaying, devSoundMuted, orbitLoading, orbitRings]);
 
   useEffect(() => {
     if (!storyActive || !autoScrollEnabled) {
@@ -791,51 +945,23 @@ export default function App() {
   const introProgress = Math.min(scrollY / viewportHeight, 1);
   const overlayOpacity = 0.18 + introProgress * 0.36;
 
-  const enterStoryNow = () => {
-    setOrbitLoading(false);
-    setOrbitDone(false);
-    setStoryActive(true);
-    setActivePage("story");
-    shouldAutoplayRef.current = false;
-    if (!devSoundMuted && audioReady && playerRef.current) {
-      playerRef.current.playVideo();
-      setAudioPlaying(true);
-    }
-    window.setTimeout(() => {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }, 220);
-  };
-
   const handleEnterStory = () => {
     if (orbitLoading || storyActive) {
       return;
     }
 
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setStoryActive(true);
+      setActivePage("story");
+      window.dispatchEvent(new CustomEvent("preloaderDone"));
+      return;
+    }
+
     setOrbitLoading(true);
-
-    orbitEnterTimerRef.current = window.setTimeout(() => {
-      setOrbitDone(true);
-
-      orbitFinalizeTimerRef.current = window.setTimeout(() => {
-        enterStoryNow();
-      }, 600);
-    }, 3800);
   };
 
   const handleSkipOrbit = () => {
-    if (orbitEnterTimerRef.current) {
-      window.clearTimeout(orbitEnterTimerRef.current);
-      orbitEnterTimerRef.current = null;
-    }
-    if (orbitFinalizeTimerRef.current) {
-      window.clearTimeout(orbitFinalizeTimerRef.current);
-      orbitFinalizeTimerRef.current = null;
-    }
-
-    setOrbitDone(true);
-    orbitFinalizeTimerRef.current = window.setTimeout(() => {
-      enterStoryNow();
-    }, 400);
+    orbitExitRef.current?.();
   };
 
   const toggleSoundtrack = () => {
@@ -915,24 +1041,27 @@ export default function App() {
           <div ref={orbitRef} className="orbit-rig" aria-hidden="true">
               <svg
                 className="orbit-svg"
-                viewBox="0 0 420 420"
+                viewBox="0 0 1000 1000"
                 xmlns="http://www.w3.org/2000/svg"
+                overflow="visible"
               >
                 <defs>
-                  {ORBIT_RINGS.map((ring, i) => (
-                    <path
-                      key={`orbit-loader-path-${i}`}
-                      id={`orbit-loader-path-${i}`}
-                      d={`
-                        M ${210 - ring.radius}, 210
-                        a ${ring.radius},${ring.radius} 0 1,1 ${ring.radius * 2},0
-                        a ${ring.radius},${ring.radius} 0 1,1 -${ring.radius * 2},0
-                      `}
-                      fill="none"
-                    />
+                  {orbitRings.map((ring, i) => (
+                    <g key={`orbit-loader-path-group-${i}`}>
+                      <path
+                        id={`orbit-loader-path-top-${i}`}
+                        d={`M ${500 - ring.radius},500 A ${ring.radius},${ring.radius} 0 0,1 ${500 + ring.radius},500`}
+                        fill="none"
+                      />
+                      <path
+                        id={`orbit-loader-path-bottom-${i}`}
+                        d={`M ${500 + ring.radius},500 A ${ring.radius},${ring.radius} 0 0,1 ${500 - ring.radius},500`}
+                        fill="none"
+                      />
+                    </g>
                   ))}
                 </defs>
-              {ORBIT_RINGS.map((ring, i) => (
+              {orbitRings.map((ring, i) => (
                 <g
                   key={`ring-${i}`}
                   className={`orbit-ring orbit-ring--${i}`}
@@ -940,13 +1069,31 @@ export default function App() {
                   <text
                     className={`orbit-ring-text orbit-ring-text--${i}`}
                     style={{ fontSize: `${ring.fontSize}px` }}
+                    xmlSpace="preserve"
                   >
                     <textPath
-                      className={`orbit-ring-path orbit-ring-path--${i}`}
-                      href={`#orbit-loader-path-${i}`}
-                      startOffset={`${ring.startOffset}%`}
+                      className={`orbit-ring-path orbit-ring-path-top orbit-ring-path-top--${i}`}
+                      href={`#orbit-loader-path-top-${i}`}
+                      startOffset="0%"
+                      textLength={ring.textLength}
+                      lengthAdjust="spacing"
                     >
-                      {ring.text}
+                      {ring.repeatedText}
+                    </textPath>
+                  </text>
+                  <text
+                    className={`orbit-ring-text orbit-ring-text--${i}`}
+                    style={{ fontSize: `${ring.fontSize}px` }}
+                    xmlSpace="preserve"
+                  >
+                    <textPath
+                      className={`orbit-ring-path orbit-ring-path-bottom orbit-ring-path-bottom--${i}`}
+                      href={`#orbit-loader-path-bottom-${i}`}
+                      startOffset="0%"
+                      textLength={ring.textLength}
+                      lengthAdjust="spacing"
+                    >
+                      {ring.repeatedText}
                     </textPath>
                   </text>
                 </g>
@@ -1040,6 +1187,36 @@ export default function App() {
       <main className="layout" aria-hidden={!storyActive || !revealReady}>
         {storyActive ? (
           <div className="story-shell">
+            <aside
+              className="chapter-dial-shell"
+              aria-label="Current chapter dial"
+            >
+              <div
+                className="chapter-dial"
+                aria-hidden="true"
+                style={{ "--dial-rotation": `${pageIndex * 90}deg` } as CSSProperties}
+              >
+                <div className="chapter-dial-core">
+                  <span>{pages[pageIndex]?.label ?? "Story"}</span>
+                </div>
+                <div className="chapter-dial-ring">
+                  {chapterDialLabels.map((label, index) => (
+                    <span
+                      key={`${label}-${index}`}
+                      className="chapter-dial-word"
+                      style={
+                        {
+                          "--dial-index": index,
+                          "--dial-count": chapterDialLabels.length,
+                        } as CSSProperties
+                      }
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </aside>
             <nav className="page-nav" aria-label="Portfolio pages">
               {pages.map((page) => (
                 <button
@@ -1057,6 +1234,7 @@ export default function App() {
             {activePage === "story" ? (
               <>
                 <section className="intro-section">
+                  <SectionHalo words={haloSets.story} className="section-halo--story" />
                   <div className="section-rule" aria-hidden="true" />
                   <p className="eyebrow" data-reveal="fade-left" data-reveal-delay={0}>
                     Chapter one
@@ -1145,6 +1323,11 @@ export default function App() {
             {activePage === "timeline" ? (
               <>
                 <section className="timeline-section" data-reveal>
+                  <SectionHalo
+                    words={haloSets.timeline}
+                    className="section-halo--timeline"
+                  />
+                  <SignalField className="signal-field--timeline" />
                   <div className="section-rule" aria-hidden="true" />
                   <p className="eyebrow">Timeline</p>
                   <h2>A path that keeps getting broader, but also more specific.</h2>
@@ -1219,6 +1402,10 @@ export default function App() {
 
             {activePage === "projects" ? (
               <section className="projects-section">
+                <SectionHalo
+                  words={haloSets.projects}
+                  className="section-halo--projects"
+                />
                 <div className="section-rule" aria-hidden="true" />
                 <p className="eyebrow">Project chapters</p>
                 <h2>
@@ -1270,6 +1457,11 @@ export default function App() {
 
             {activePage === "contact" ? (
               <section className="contact-scene" data-reveal>
+                <SectionHalo
+                  words={haloSets.contact}
+                  className="section-halo--contact"
+                />
+                <SignalField className="signal-field--contact" />
                 <div className="section-rule" aria-hidden="true" />
                 <p className="eyebrow">Next scene</p>
                 <h2 data-reveal="clip-wipe">

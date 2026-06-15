@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Orbit Preloader Demo</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <style>
+      :root {
+        --bg: #080808;
+        --accent: #f5c842;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: #f6f0d9;
+        font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      }
+
+      body { overflow: hidden; }
+
+      #portfolio {
+        min-height: 100vh;
+        opacity: 0;
+        transition: opacity 600ms ease;
+        display: grid;
+        place-items: center;
+        padding: 2rem;
+        background:
+          radial-gradient(circle at 50% 30%, rgba(245, 200, 66, 0.06), transparent 24%),
+          #080808;
+      }
+
+      #portfolio.is-visible { opacity: 1; }
+
+      #preloader {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 50% 50%, rgba(245, 200, 66, 0.04), transparent 28%),
+          #080808;
+      }
+
+      .preloader-ambient {
+        position: absolute;
+        width: min(78vmin, 48rem);
+        height: min(78vmin, 48rem);
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(245, 200, 66, 0.05), transparent 70%);
+        filter: blur(12px);
+      }
+
+      .preloader-rig {
+        position: relative;
+        width: min(88vmin, 56rem);
+        height: min(88vmin, 56rem);
+      }
+
+      .preloader-svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+
+      .ring {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: ringGlow 3s ease-in-out infinite;
+      }
+
+      .ring text {
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        user-select: none;
+        white-space: nowrap;
+      }
+
+      .ring.even text { fill: rgba(245, 200, 66, 0.55); }
+      .ring.odd text { fill: rgba(245, 200, 66, 0.85); }
+
+      .center {
+        position: absolute;
+        inset: 50% auto auto 50%;
+        transform: translate(-50%, -50%);
+        display: grid;
+        place-items: center;
+        text-align: center;
+      }
+
+      .center-label {
+        margin-bottom: 0.8rem;
+        color: rgba(245, 200, 66, 0.5);
+        font-size: 0.72rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+
+      .counter {
+        color: var(--accent);
+        font-size: clamp(3rem, 8vw, 6rem);
+        font-weight: 700;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+        text-shadow: 0 0 40px rgba(245, 200, 66, 0.4);
+      }
+
+      .footer-label {
+        position: absolute;
+        left: 50%;
+        bottom: 5rem;
+        transform: translateX(-50%);
+        color: rgba(245, 200, 66, 0.35);
+        font-size: 0.72rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+
+      .demo-note {
+        position: absolute;
+        left: 50%;
+        bottom: 2rem;
+        transform: translateX(-50%);
+        color: rgba(245, 200, 66, 0.24);
+        font-size: 0.62rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      @keyframes ringGlow {
+        0%, 100% { filter: drop-shadow(0 0 6px rgba(245, 200, 66, 0.22)); }
+        50% { filter: drop-shadow(0 0 12px rgba(245, 200, 66, 0.36)); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="preloader"></div>
+    <main id="portfolio">
+      <div>
+        <p style="margin:0 0 1rem; color: rgba(245,200,66,0.5); letter-spacing:0.22em; text-transform:uppercase;">Placeholder Portfolio</p>
+        <h1 style="margin:0; font-size:clamp(3rem,10vw,7rem); line-height:0.9;">Pranav's Portfolio</h1>
+      </div>
+    </main>
+
+    <script>
+      const CONFIG = {
+        rings: [
+          "DATA SCIENCE",
+          "MACHINE LEARNING",
+          "COMPUTER VISION",
+          "NLP",
+          "PYTHON",
+          "PYTORCH",
+          "FULL STACK",
+          "AI ENGINEER",
+        ],
+        duration: 2800,
+        accentColor: "#F5C842",
+        bgColor: "#080808",
+        ringRadiiBase: [60, 100, 145, 195, 250, 310, 375, 445],
+      };
+
+      const preloader = document.getElementById("preloader");
+      const portfolio = document.getElementById("portfolio");
+      let activeTimelines = [];
+      let counterFrame = 0;
+
+      const buildRepeatedText = (label, radius, fontSize) => {
+        const arcLength = Math.PI * radius;
+        const segment = `${label} • `;
+        const estimatedCharWidth = fontSize * 0.6;
+        const minCharacters = Math.ceil(arcLength / estimatedCharWidth);
+        const repeatCount = Math.max(2, Math.ceil(minCharacters / segment.length));
+        return Array.from({ length: repeatCount }, () => segment).join("");
+      };
+
+      const easeInOutCubic = (t) =>
+        t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+      function cleanupPreloader() {
+        activeTimelines.forEach((tl) => tl.kill());
+        activeTimelines = [];
+        cancelAnimationFrame(counterFrame);
+        preloader.innerHTML = "";
+        preloader.style.opacity = "1";
+        preloader.style.display = "grid";
+      }
+
+      function renderPreloader() {
+        cleanupPreloader();
+
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const size = Math.min(window.innerWidth, window.innerHeight);
+        const scale = Math.max(0.32, size / 1000);
+        const radii = CONFIG.ringRadiiBase.map((r) => r * scale);
+        const svgNS = "http://www.w3.org/2000/svg";
+
+        const ambient = document.createElement("div");
+        ambient.className = "preloader-ambient";
+
+        const rig = document.createElement("div");
+        rig.className = "preloader-rig";
+
+        const svg = document.createElementNS(svgNS, "svg");
+        svg.setAttribute("class", "preloader-svg");
+        svg.setAttribute("viewBox", "0 0 1000 1000");
+        svg.setAttribute("overflow", "visible");
+
+        const defs = document.createElementNS(svgNS, "defs");
+        svg.appendChild(defs);
+
+        const ringMeta = CONFIG.rings.map((label, index) => {
+          const radius = radii[index];
+          const fontSize = Math.max(12, radius * 0.095);
+          const repeatedText = buildRepeatedText(label, radius, fontSize);
+          const textLength = Math.PI * radius;
+          return {
+            label,
+            radius,
+            fontSize,
+            repeatedText,
+            textLength,
+            duration: 8 + index * 2.4,
+            direction: index % 2 === 0 ? -1 : 1,
+            pulseScale: 1.025 + index * 0.004,
+          };
+        });
+
+        ringMeta.forEach((ring, index) => {
+          const topPath = document.createElementNS(svgNS, "path");
+          topPath.setAttribute("id", `ring-top-${index}`);
+          topPath.setAttribute("d", `M ${500 - ring.radius},500 A ${ring.radius},${ring.radius} 0 0,1 ${500 + ring.radius},500`);
+          topPath.setAttribute("fill", "none");
+
+          const bottomPath = document.createElementNS(svgNS, "path");
+          bottomPath.setAttribute("id", `ring-bottom-${index}`);
+          bottomPath.setAttribute("d", `M ${500 + ring.radius},500 A ${ring.radius},${ring.radius} 0 0,1 ${500 - ring.radius},500`);
+          bottomPath.setAttribute("fill", "none");
+
+          defs.appendChild(topPath);
+          defs.appendChild(bottomPath);
+
+          const group = document.createElementNS(svgNS, "g");
+          group.setAttribute("class", `ring ${index % 2 === 0 ? "even" : "odd"}`);
+          group.dataset.index = index;
+
+          const makeText = (pathId, sideClass) => {
+            const text = document.createElementNS(svgNS, "text");
+            text.setAttribute("font-size", ring.fontSize);
+            text.setAttribute("xml:space", "preserve");
+            text.style.letterSpacing = "0.15em";
+
+            const textPath = document.createElementNS(svgNS, "textPath");
+            textPath.setAttribute("href", `#${pathId}`);
+            textPath.setAttribute("startOffset", "0%");
+            textPath.setAttribute("textLength", String(ring.textLength));
+            textPath.setAttribute("lengthAdjust", "spacing");
+            textPath.setAttribute("side", "right");
+            textPath.setAttribute("class", `ring-path ${sideClass}`);
+            textPath.textContent = ring.repeatedText;
+            text.appendChild(textPath);
+            return text;
+          };
+
+          group.appendChild(makeText(`ring-top-${index}`, `ring-path-top-${index}`));
+          group.appendChild(makeText(`ring-bottom-${index}`, `ring-path-bottom-${index}`));
+          svg.appendChild(group);
+
+          const randomOffset = Math.random() * 100;
+          gsap.set(group, { transformOrigin: "50% 50%", rotation: 0, opacity: 0.4, scale: 1 });
+          gsap.set(group.querySelectorAll("textPath"), { attr: { startOffset: `${randomOffset}%` } });
+
+          const tl = gsap.timeline({ repeat: -1 });
+          tl.to(group.querySelectorAll("textPath"), {
+            attr: { startOffset: `${randomOffset + ring.direction * 100}%` },
+            duration: ring.duration,
+            ease: "none",
+          }, 0);
+          tl.to(group, {
+            scale: ring.pulseScale,
+            opacity: 1,
+            duration: 2.4,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat: 1,
+          }, (ringMeta.length - 1 - index) * 0.12);
+          activeTimelines.push(tl);
+        });
+
+        const center = document.createElement("div");
+        center.className = "center";
+        center.innerHTML = `
+          <div class="center-label">Loading</div>
+          <div class="counter"><span class="counter-value">0</span><span>%</span></div>
+        `;
+
+        const footer = document.createElement("div");
+        footer.className = "footer-label";
+        footer.textContent = "Entering the story";
+
+        const note = document.createElement("div");
+        note.className = "demo-note";
+        note.textContent = new URLSearchParams(window.location.search).get("demo") === "1"
+          ? "Demo mode active — click anywhere to restart"
+          : "";
+
+        rig.appendChild(svg);
+        preloader.appendChild(ambient);
+        preloader.appendChild(rig);
+        preloader.appendChild(center);
+        preloader.appendChild(footer);
+        if (note.textContent) preloader.appendChild(note);
+
+        const counterNode = preloader.querySelector(".counter-value");
+
+        const exit = () => {
+          const rings = [...svg.querySelectorAll(".ring")].reverse();
+          const exitTl = gsap.timeline({
+            onComplete: () => {
+              gsap.to(preloader, {
+                opacity: 0,
+                duration: 0.4,
+                onComplete: () => {
+                  preloader.style.display = "none";
+                  window.dispatchEvent(new CustomEvent("preloaderDone"));
+                },
+              });
+            },
+          });
+
+          exitTl.to(rings, {
+            opacity: 0,
+            scale: 0.85,
+            duration: 0.34,
+            stagger: 0.07,
+            ease: "power3.inOut",
+          }, 0);
+          exitTl.to(".center, .footer-label, .demo-note", { opacity: 0, duration: 0.28 }, 0.12);
+          exitTl.to(".preloader-ambient", { opacity: 0, scale: 1.12, duration: 0.36 }, 0.18);
+          activeTimelines.push(exitTl);
+        };
+
+        if (reducedMotion) {
+          counterNode.textContent = "100";
+          exit();
+          return;
+        }
+
+        const start = performance.now();
+        const updateCounter = (now) => {
+          const progress = Math.min((now - start) / CONFIG.duration, 1);
+          const eased = easeInOutCubic(progress);
+          counterNode.textContent = String(Math.round(eased * 100));
+          if (progress < 1) {
+            counterFrame = requestAnimationFrame(updateCounter);
+          } else {
+            exit();
+          }
+        };
+
+        counterFrame = requestAnimationFrame(updateCounter);
+      }
+
+      document.addEventListener("DOMContentLoaded", renderPreloader);
+      window.addEventListener("resize", renderPreloader);
+      window.addEventListener("preloaderDone", () => {
+        portfolio.classList.add("is-visible");
+        document.body.style.overflow = "";
+      });
+
+      if (new URLSearchParams(window.location.search).get("demo") === "1") {
+        window.addEventListener("click", () => {
+          portfolio.classList.remove("is-visible");
+          renderPreloader();
+        });
+      }
+    </script>
+  </body>
+</html>
