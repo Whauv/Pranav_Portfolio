@@ -111,6 +111,57 @@ const pages = [
   { id: "contact", label: "Contact" },
 ] as const;
 
+const portfolioMenuItems = [
+  {
+    id: "story",
+    title: "Story",
+    subtitle: "Who I am and how I build",
+    ctaLabel: "Enter story",
+    baseAngle: 180,
+    spinDuration: 18,
+    spinDirection: 1,
+    artwork:
+      "https://mir-s3-cdn-cf.behance.net/project_modules/hd/71c525241287029.6953aa1322398.gif",
+    position: "18% center",
+  },
+  {
+    id: "timeline",
+    title: "Timeline",
+    subtitle: "My journey and experience",
+    ctaLabel: "View timeline",
+    baseAngle: -90,
+    spinDuration: 24,
+    spinDirection: -1,
+    artwork:
+      "https://mir-s3-cdn-cf.behance.net/project_modules/disp/6c674e241287029.6953aa1320b47.gif",
+    position: "center center",
+  },
+  {
+    id: "projects",
+    title: "Projects",
+    subtitle: "Selected work and case studies",
+    ctaLabel: "See projects",
+    baseAngle: 0,
+    spinDuration: 15,
+    spinDirection: 1,
+    artwork:
+      "https://mir-s3-cdn-cf.behance.net/project_modules/hd/71c525241287029.6953aa1322398.gif",
+    position: "74% center",
+  },
+  {
+    id: "contact",
+    title: "Contact",
+    subtitle: "Ways to reach and collaborate",
+    ctaLabel: "Get in touch",
+    baseAngle: 90,
+    spinDuration: 21,
+    spinDirection: -1,
+    artwork:
+      "https://mir-s3-cdn-cf.behance.net/project_modules/disp/6c674e241287029.6953aa1320b47.gif",
+    position: "82% center",
+  },
+] as const;
+
 const chapterDialLabels = [
   "Story",
   "Timeline",
@@ -299,6 +350,230 @@ function buildOrbitRingText(label: string, radius: number, fontSize: number) {
   return Array.from({ length: repeatCount }, () => segment).join("");
 }
 
+type FlickerState = "on" | "off";
+
+type FlickerStep = {
+  state: FlickerState;
+  duration: number;
+};
+
+type FlickerTextOptions = {
+  element: HTMLElement;
+  flickerPattern: FlickerStep[];
+  glowColor?: string;
+  idleMin?: number;
+  idleMax?: number;
+};
+
+type FlickerStyleKey = "neon" | "led" | "retro";
+
+const FLICKER_STYLE_MAP: Record<FlickerStyleKey, { color: string; glow: string }> = {
+  neon: { color: "#F5C842", glow: "245, 200, 66" },
+  led: { color: "#d3e7ff", glow: "180, 220, 255" },
+  retro: { color: "#f2a34a", glow: "255, 160, 50" },
+};
+
+const DEFAULT_FLICKER_PATTERN: FlickerStep[] = [
+  { state: "off", duration: 80 },
+  { state: "on", duration: 60 },
+  { state: "off", duration: 40 },
+  { state: "on", duration: 100 },
+  { state: "off", duration: 30 },
+  { state: "on", duration: 50 },
+  { state: "on", duration: 1020 },
+];
+
+function getFlickerSpeedMultiplier(value: string | undefined) {
+  if (value === "fast") return 0.5;
+  if (value === "slow") return 1.5;
+  return 1;
+}
+
+export class FlickerText {
+  element: HTMLElement;
+  flickerPattern: FlickerStep[];
+  glowColor: string;
+  idleMin: number;
+  idleMax: number;
+  styleKey: FlickerStyleKey;
+  speedMultiplier: number;
+  repeatOnView: boolean;
+  idlePhaseOffset: number;
+  introPlayed = false;
+  isDestroyed = false;
+  isRunningBurst = false;
+  timeouts = new Set<number>();
+  observer: IntersectionObserver | null = null;
+
+  constructor({
+    element,
+    flickerPattern,
+    glowColor,
+    idleMin = 2000,
+    idleMax = 6000,
+  }: FlickerTextOptions) {
+    this.element = element;
+    this.speedMultiplier = getFlickerSpeedMultiplier(
+      element.dataset.flickerSpeed,
+    );
+    this.styleKey =
+      (element.dataset.flickerStyle as FlickerStyleKey | undefined) ?? "neon";
+    this.repeatOnView = element.dataset.flickerRepeat === "true";
+    const preset = FLICKER_STYLE_MAP[this.styleKey] ?? FLICKER_STYLE_MAP.neon;
+    this.glowColor = glowColor ?? preset.glow;
+    this.idleMin = Math.round(idleMin * this.speedMultiplier);
+    this.idleMax = Math.round(idleMax * this.speedMultiplier);
+    this.idlePhaseOffset = 240 + Math.round(Math.random() * 1300);
+    this.flickerPattern = flickerPattern.map((step) => ({
+      ...step,
+      duration: Math.round(step.duration * this.speedMultiplier),
+    }));
+
+    this.element.style.transition = "none";
+    this.element.style.willChange = "opacity, text-shadow";
+    this.element.style.color = preset.color;
+    this.applyState("off", 0.08);
+    this.setupObserver();
+    this.start();
+  }
+
+  schedule(callback: () => void, delay: number) {
+    const timeoutId = window.setTimeout(() => {
+      this.timeouts.delete(timeoutId);
+      callback();
+    }, delay);
+    this.timeouts.add(timeoutId);
+  }
+
+  applyState(state: FlickerState, opacityJitter?: number) {
+    if (state === "off") {
+      this.element.style.opacity = String(opacityJitter ?? 0.08);
+      this.element.style.textShadow = "0 0 4px rgba(245,200,66,0.1)";
+      return;
+    }
+
+    this.element.style.opacity = String(opacityJitter ?? 1);
+    this.element.style.textShadow = `0 0 10px rgba(${this.glowColor}, 0.9), 0 0 20px rgba(${this.glowColor}, 0.7), 0 0 40px rgba(${this.glowColor}, 0.5), 0 0 80px rgba(${this.glowColor}, 0.3)`;
+  }
+
+  runPattern(pattern: FlickerStep[], done?: () => void, index = 0) {
+    if (this.isDestroyed) return;
+    if (index >= pattern.length) {
+      this.applyState("on", 1);
+      done?.();
+      return;
+    }
+
+    const step = pattern[index];
+    const intensity =
+      step.state === "off"
+        ? 0.06 + Math.random() * 0.06
+        : 0.88 + Math.random() * 0.12;
+
+    this.applyState(step.state, intensity);
+    this.schedule(() => this.runPattern(pattern, done, index + 1), step.duration);
+  }
+
+  playIntro() {
+    this.isRunningBurst = true;
+    this.runPattern(this.flickerPattern, () => {
+      this.introPlayed = true;
+      this.isRunningBurst = false;
+      this.scheduleAmbientBurst();
+    });
+  }
+
+  scheduleAmbientBurst() {
+    if (this.isDestroyed || this.isRunningBurst) return;
+    const delay =
+      this.idleMin +
+      this.idlePhaseOffset +
+      Math.round(Math.random() * (this.idleMax - this.idleMin));
+
+    this.schedule(() => {
+      if (this.isDestroyed || this.isRunningBurst) return;
+      this.isRunningBurst = true;
+      const burstPattern: FlickerStep[] = [
+        { state: "off", duration: 22 + Math.round(Math.random() * 18) },
+        { state: "on", duration: 14 + Math.round(Math.random() * 14) },
+        { state: "off", duration: 10 + Math.round(Math.random() * 14) },
+        { state: "on", duration: 16 + Math.round(Math.random() * 18) },
+      ];
+
+      this.runPattern(
+        burstPattern.map((step) => ({
+          ...step,
+          duration: Math.round(step.duration * this.speedMultiplier),
+        })),
+        () => {
+          this.isRunningBurst = false;
+          this.applyState("on", 1);
+          this.scheduleAmbientBurst();
+        },
+      );
+    }, delay);
+  }
+
+  setupObserver() {
+    if (!this.repeatOnView || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+
+    this.observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          this.clearTimers();
+          this.introPlayed = false;
+          this.applyState("off", 0.08);
+          this.start();
+        });
+      },
+      { threshold: 0.55 },
+    );
+
+    this.observer.observe(this.element);
+  }
+
+  start() {
+    if (this.isDestroyed || this.introPlayed) return;
+    this.playIntro();
+  }
+
+  clearTimers() {
+    this.timeouts.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    this.timeouts.clear();
+    this.isRunningBurst = false;
+  }
+
+  destroy() {
+    this.isDestroyed = true;
+    this.clearTimers();
+    this.observer?.disconnect();
+    this.element.style.removeProperty("will-change");
+  }
+
+  static autoInit(root: ParentNode = document) {
+    return Array.from(root.querySelectorAll<HTMLElement>(".flicker-text")).map(
+      (element) => {
+        const delay = Number(element.dataset.flickerDelay ?? "0");
+        const instance = new FlickerText({
+          element,
+          flickerPattern: DEFAULT_FLICKER_PATTERN,
+        });
+
+        if (delay > 0) {
+          instance.clearTimers();
+          instance.applyState("off", 0.08);
+          instance.schedule(() => instance.start(), delay);
+        }
+
+        return instance;
+      },
+    );
+  }
+}
+
 export default function App() {
   const [scrollY, setScrollY] = useState(0);
   const [viewportWidth, setViewportWidth] = useState(1);
@@ -318,6 +593,9 @@ export default function App() {
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [devSoundMuted, setDevSoundMuted] = useState(true);
   const [revealReady, setRevealReady] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuFocusIndex, setMenuFocusIndex] = useState(0);
+  const [menuSelectedIndex, setMenuSelectedIndex] = useState(0);
   const cursorTrailRef = useRef<HTMLDivElement>(null);
   const cursorDotRef = useRef<HTMLDivElement>(null);
   const cursorRingRef = useRef<HTMLDivElement>(null);
@@ -331,11 +609,21 @@ export default function App() {
   const orbitRef = useRef<HTMLDivElement>(null);
   const orbitRafRef = useRef<number>(0);
   const orbitExitRef = useRef<(() => void) | null>(null);
+  const menuMotionRef = useRef<HTMLDivElement>(null);
+  const menuDetailsRef = useRef<HTMLDivElement>(null);
+  const menuSelectorRef = useRef<HTMLDivElement>(null);
+  const menuOrbitRef = useRef<HTMLDivElement>(null);
+  const menuDiscRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const menuSurfaceRefs = useRef<Array<HTMLSpanElement | null>>([]);
+  const menuAngleOffsetRef = useRef(180);
 
   const pageIndex = useMemo(
     () => pages.findIndex((page) => page.id === activePage),
     [activePage],
   );
+
+  const menuActiveItem =
+    portfolioMenuItems[menuSelectedIndex] ?? portfolioMenuItems[0];
 
   const orbitScale = useMemo(
     () => Math.max(0.32, Math.min(viewportWidth, viewportHeight) / 1000),
@@ -360,6 +648,220 @@ export default function App() {
       }),
     [orbitScale],
   );
+
+  const menuOrbitRadius = useMemo(
+    () => {
+      if (viewportWidth < 600) {
+        return Math.min(viewportWidth * 0.38, viewportHeight * 0.38);
+      }
+      return Math.min(viewportWidth, viewportHeight) * 0.36;
+    },
+    [viewportHeight, viewportWidth],
+  );
+
+  const isMenuMobile = viewportWidth < 820;
+
+  const setMenuDiscRef = (index: number, node: HTMLButtonElement | null) => {
+    menuDiscRefs.current[index] = node;
+  };
+
+  const setMenuSurfaceRef = (index: number, node: HTMLSpanElement | null) => {
+    menuSurfaceRefs.current[index] = node;
+  };
+
+  const renderMenuOrbit = () => {
+    const selector = menuSelectorRef.current;
+    const orbit = menuOrbitRef.current;
+    const details = menuDetailsRef.current;
+    if (!selector) return;
+
+    if (!isMenuMobile) {
+      const orbitCx = viewportWidth * 0.65;
+      const orbitCy = viewportHeight * 0.5;
+      const orbitDiameter = Math.min(viewportWidth * 0.8, viewportHeight * 0.8);
+
+      gsap.set(selector, {
+        "--orbit-cx": `${orbitCx}px`,
+        "--orbit-cy": `${orbitCy}px`,
+        "--orbit-radius": `${menuOrbitRadius}px`,
+        "--orbit-diameter": `${orbitDiameter}px`,
+      });
+
+      if (details) {
+        gsap.set(details, { opacity: 1 });
+      }
+
+      if (orbit) {
+        gsap.set(orbit, {
+          left: orbitCx,
+          top: orbitCy,
+          width: menuOrbitRadius * 2,
+          height: menuOrbitRadius * 2,
+          xPercent: -50,
+          yPercent: -50,
+        });
+      }
+    }
+
+    portfolioMenuItems.forEach((item, index) => {
+      const button = menuDiscRefs.current[index];
+      if (!button) return;
+
+      if (isMenuMobile) {
+        button.tabIndex = index === menuFocusIndex ? 0 : -1;
+        button.setAttribute("aria-pressed", String(index === menuSelectedIndex));
+        return;
+      }
+
+      const orbitCx = viewportWidth * 0.65;
+      const orbitCy = viewportHeight * 0.5;
+      const angle = menuAngleOffsetRef.current + item.baseAngle;
+      const radians = angle * (Math.PI / 180);
+      const x = orbitCx + menuOrbitRadius * Math.cos(radians);
+      const y = orbitCy + menuOrbitRadius * Math.sin(radians);
+      const activeDistance =
+        Math.abs((((180 - angle) % 360) + 540) % 360 - 180);
+      const focusWeight = Math.max(0, 1 - activeDistance / 180);
+      const isActive = index === menuSelectedIndex;
+      const activeSize = Math.min(160, viewportWidth * 0.18);
+      const inactiveSize = Math.min(100, viewportWidth * 0.11);
+      const discSize = isActive ? activeSize : inactiveSize;
+      const scale = isActive ? 1 : 0.95 + focusWeight * 0.05;
+      const opacity = isActive ? 1 : 0.76 + focusWeight * 0.14;
+      const zIndex = Math.round(1000 + (180 - activeDistance));
+
+      gsap.set(button, { left: x, top: y, xPercent: -50, yPercent: -50, zIndex });
+      const disc = button.querySelector<HTMLElement>(".portfolio-cd-disc");
+      if (disc) {
+        gsap.set(disc, {
+          width: discSize,
+          height: discSize,
+          scale,
+          opacity,
+        });
+        disc.classList.toggle("is-active", isActive);
+      }
+
+      button.tabIndex = index === menuFocusIndex ? 0 : -1;
+      button.setAttribute("aria-pressed", String(isActive));
+    });
+  };
+
+  const animateToMenuIndex = (
+    nextIndex: number,
+    options: { immediate?: boolean; commitSelection?: boolean } = {},
+  ) => {
+    const { immediate = false, commitSelection = true } = options;
+    const targetOffset = 180 - portfolioMenuItems[nextIndex].baseAngle;
+    const currentOffset = menuAngleOffsetRef.current;
+    const delta = ((targetOffset - currentOffset + 540) % 360) - 180;
+    const finalOffset = currentOffset + delta;
+
+    if (commitSelection) {
+      setMenuSelectedIndex(nextIndex);
+    }
+    setMenuFocusIndex(nextIndex);
+
+    if (immediate) {
+      menuAngleOffsetRef.current = finalOffset;
+      renderMenuOrbit();
+      menuDiscRefs.current[nextIndex]?.focus({ preventScroll: true });
+      return;
+    }
+
+    const animatedOffset = { value: currentOffset };
+    gsap.to(animatedOffset, {
+      value: finalOffset,
+      duration: 1.05,
+      ease: "elastic.out(1, 0.76)",
+      onUpdate: () => {
+        menuAngleOffsetRef.current = animatedOffset.value;
+        renderMenuOrbit();
+      },
+      onComplete: () => {
+        menuAngleOffsetRef.current =
+          ((animatedOffset.value % 360) + 360) % 360;
+        renderMenuOrbit();
+        menuDiscRefs.current[nextIndex]?.focus({ preventScroll: true });
+      },
+    });
+  };
+
+  const handleMenuEnter = () => {
+    const nextItem = portfolioMenuItems[menuSelectedIndex];
+    if (!nextItem) return;
+
+    setActivePage(nextItem.id as PageId);
+    closePortfolioMenu();
+  };
+
+  const openPortfolioMenu = () => {
+    if (menuOpen) return;
+    setMenuSelectedIndex(pageIndex);
+    setMenuFocusIndex(pageIndex);
+    setMenuOpen(true);
+  };
+
+  const closePortfolioMenu = () => {
+    if (!menuOpen) return;
+    const motion = menuMotionRef.current;
+    const details = menuDetailsRef.current;
+    const orbit = menuOrbitRef.current;
+    const discs = menuDiscRefs.current.filter(Boolean);
+
+    if (!motion || !details || !orbit) {
+      setMenuOpen(false);
+      return;
+    }
+
+    const timeline = gsap.timeline({
+      onComplete: () => {
+        setMenuOpen(false);
+      },
+    });
+
+    timeline.to(details, {
+      opacity: 0,
+      x: -40,
+      duration: 0.3,
+      ease: "power2.in",
+    });
+
+    timeline.to(
+      discs.reverse(),
+      {
+        opacity: 0,
+        scale: 0,
+        xPercent: -50,
+        yPercent: -50,
+        duration: 0.3,
+        stagger: 0.03,
+        ease: "power3.in",
+      },
+      0,
+    );
+
+    timeline.to(
+      orbit,
+      {
+        opacity: 0,
+        x: 60,
+        duration: 0.3,
+        ease: "power2.in",
+      },
+      0,
+    );
+
+    timeline.to(
+      ".portfolio-nav-overlay-backdrop",
+      {
+        opacity: 0,
+        duration: 0.3,
+        ease: "power2.in",
+      },
+      0,
+    );
+  };
 
   useEffect(() => {
     const loaderTimer = window.setTimeout(() => {
@@ -942,6 +1444,184 @@ export default function App() {
     setAutoScrollEnabled(false);
   }, [activePage]);
 
+  useEffect(() => {
+    if (!menuOpen) {
+      setMenuSelectedIndex(pageIndex);
+      setMenuFocusIndex(pageIndex);
+    }
+    menuAngleOffsetRef.current = 180 - portfolioMenuItems[menuSelectedIndex].baseAngle;
+    renderMenuOrbit();
+  }, [isMenuMobile, menuOpen, menuOrbitRadius, menuSelectedIndex, pageIndex]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const motion = menuMotionRef.current;
+    const details = menuDetailsRef.current;
+    const orbit = menuOrbitRef.current;
+    const discs = menuDiscRefs.current.filter(Boolean);
+
+    if (!motion || !details || !orbit) return;
+
+    gsap.set(details, { opacity: 0, x: -40 });
+    gsap.set(orbit, { opacity: 0, x: 60 });
+    gsap.set(discs, { opacity: 0, scale: 0, xPercent: -50, yPercent: -50 });
+    gsap.set(motion, { opacity: 1, x: 0, scale: 1 });
+    gsap.set(".portfolio-nav-overlay-backdrop", { opacity: 0 });
+
+    const timeline = gsap.timeline();
+    timeline.to(".portfolio-nav-overlay-backdrop", {
+      opacity: 1,
+      duration: 0.35,
+      ease: "power2.out",
+    });
+    timeline.to(
+      orbit,
+      {
+        opacity: 1,
+        x: 0,
+        duration: 0.55,
+        ease: "power3.out",
+      },
+      0,
+    );
+    timeline.to(
+      discs,
+      {
+        opacity: 1,
+        scale: 1,
+        duration: 0.55,
+        stagger: 0.07,
+        ease: "back.out(1.5)",
+      },
+      0.06,
+    );
+    timeline.to(
+      details,
+      {
+        opacity: 1,
+        x: 0,
+        duration: 0.55,
+        ease: "power3.out",
+      },
+      0,
+    );
+
+    animateToMenuIndex(menuSelectedIndex, { immediate: true, commitSelection: false });
+  }, [menuOpen, menuSelectedIndex]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const details = menuDetailsRef.current;
+    if (!details) return;
+
+    const timeline = gsap.timeline();
+    timeline.fromTo(
+      details.querySelectorAll(
+        ".portfolio-nav-label, .portfolio-nav-title, .portfolio-nav-subtitle, .portfolio-nav-meta, .portfolio-nav-enter",
+      ),
+      { opacity: 0, y: 12 },
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.42,
+        stagger: 0.04,
+        ease: "power3.out",
+      },
+    );
+  }, [menuOpen, menuSelectedIndex]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const orbit = menuOrbitRef.current;
+    if (!orbit) return;
+
+    const orbitTween = gsap.to(orbit, {
+      rotation: 360,
+      duration: 40,
+      ease: "none",
+      repeat: -1,
+      transformOrigin: "50% 50%",
+    });
+
+    const surfaceTweens = menuSurfaceRefs.current.map((surface, index) => {
+      if (!surface) return null;
+      const item = portfolioMenuItems[index];
+      const spinDuration = index === menuSelectedIndex ? 8 : item.spinDuration;
+
+      gsap.set(surface, { "--sheen-angle": `${Math.random() * 360}deg` });
+
+      const spinTween = gsap.to(surface, {
+        rotation: item.spinDirection * 360,
+        duration: spinDuration,
+        ease: "none",
+        repeat: -1,
+        transformOrigin: "50% 50%",
+      });
+
+      const sheenTween = gsap.to(surface, {
+        "--sheen-angle": `${360 + Math.random() * 360}deg`,
+        duration: spinDuration * 1.35,
+        ease: "none",
+        repeat: -1,
+      });
+
+      return [spinTween, sheenTween];
+    });
+
+    return () => {
+      orbitTween.kill();
+      surfaceTweens.forEach((entry) => entry?.forEach((tween) => tween.kill()));
+    };
+  }, [menuOpen, menuSelectedIndex]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closePortfolioMenu();
+        return;
+      }
+
+      if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+        event.preventDefault();
+        animateToMenuIndex((menuSelectedIndex + 1) % portfolioMenuItems.length);
+        return;
+      }
+
+      if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+        event.preventDefault();
+        animateToMenuIndex(
+          (menuSelectedIndex - 1 + portfolioMenuItems.length) % portfolioMenuItems.length,
+        );
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleMenuEnter();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen, menuSelectedIndex]);
+
+  useEffect(() => {
+    if (!revealReady) return;
+
+    const flickerInstances = FlickerText.autoInit();
+    return () => {
+      flickerInstances.forEach((instance) => instance.destroy());
+    };
+  }, [revealReady]);
+
   const introProgress = Math.min(scrollY / viewportHeight, 1);
   const overlayOpacity = 0.18 + introProgress * 0.36;
 
@@ -1127,6 +1807,153 @@ export default function App() {
       <div id="youtube-soundtrack-player" className="youtube-soundtrack-player" />
 
       {storyActive ? (
+        <>
+          <button
+            type="button"
+            className="portfolio-menu-toggle"
+            aria-label="Open circular portfolio navigation"
+            aria-expanded={menuOpen}
+            onClick={openPortfolioMenu}
+          >
+            <span className="portfolio-menu-lines" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+          </button>
+
+          {menuOpen ? (
+            <div
+              className="portfolio-nav-overlay"
+              aria-hidden={!menuOpen}
+            >
+              <div
+                className="portfolio-nav-overlay-backdrop"
+                onClick={closePortfolioMenu}
+              />
+              <div className="portfolio-nav-panel">
+                <section className="portfolio-nav-stage">
+                  <button
+                    type="button"
+                    className="portfolio-nav-close"
+                    aria-label="Close circular navigation"
+                    onClick={closePortfolioMenu}
+                  >
+                    &times;
+                  </button>
+                  <div className="portfolio-nav-motion" ref={menuMotionRef}>
+                    {!isMenuMobile ? (
+                      <div className="portfolio-nav-selector" ref={menuSelectorRef}>
+                        <div className="portfolio-nav-orbit-system" ref={menuOrbitRef}>
+                          <div className="portfolio-nav-orbit-outline" aria-hidden="true" />
+                          <div className="portfolio-nav-orbit-inner" aria-hidden="true" />
+                          <div className="portfolio-nav-orbit-glow" aria-hidden="true" />
+                          <span className="portfolio-nav-tick portfolio-nav-tick--top" aria-hidden="true" />
+                          <span className="portfolio-nav-tick portfolio-nav-tick--right" aria-hidden="true" />
+                          <span className="portfolio-nav-tick portfolio-nav-tick--bottom" aria-hidden="true" />
+                          <span className="portfolio-nav-tick portfolio-nav-tick--left" aria-hidden="true" />
+                        </div>
+                        <div className="portfolio-nav-core" ref={menuDetailsRef}>
+                          <p className="portfolio-nav-label">Current selection</p>
+                          <h2 className="portfolio-nav-title">{menuActiveItem.title}</h2>
+                          <p className="portfolio-nav-subtitle">{menuActiveItem.subtitle}</p>
+                          <div className="portfolio-nav-meta">0{menuSelectedIndex + 1} / 04</div>
+                          <button
+                            type="button"
+                            className="portfolio-nav-enter"
+                            onClick={handleMenuEnter}
+                          >
+                            {menuActiveItem.ctaLabel} <span aria-hidden="true">&rarr;</span>
+                          </button>
+                        </div>
+                        {portfolioMenuItems.map((item, index) => (
+                          <button
+                            key={item.id}
+                            ref={(node) => setMenuDiscRef(index, node)}
+                            type="button"
+                            className="portfolio-cd-arm"
+                            aria-label={`${item.title} - ${item.subtitle}`}
+                            onClick={() => animateToMenuIndex(index)}
+                          >
+                            <span className="portfolio-cd-disc">
+                              <span
+                                ref={(node) => setMenuSurfaceRef(index, node)}
+                                className="portfolio-cd-surface"
+                                style={
+                                  {
+                                    "--disc-artwork": `url("${item.artwork}")`,
+                                    "--disc-position": item.position,
+                                  } as CSSProperties
+                                }
+                                aria-hidden="true"
+                              >
+                                <span className="portfolio-cd-sheen" />
+                                <span className="portfolio-cd-groove portfolio-cd-groove--one" />
+                                <span className="portfolio-cd-groove portfolio-cd-groove--two" />
+                                <span className="portfolio-cd-groove portfolio-cd-groove--three" />
+                                <span className="portfolio-cd-groove portfolio-cd-groove--four" />
+                                <span className="portfolio-cd-hole" />
+                              </span>
+                              <span className="portfolio-cd-label">{item.title}</span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="portfolio-nav-mobile" ref={menuDetailsRef}>
+                        <div className="portfolio-nav-mobile-header">
+                          <p className="portfolio-nav-label">Current selection</p>
+                          <h2 className="portfolio-nav-title">{menuActiveItem.title}</h2>
+                          <p className="portfolio-nav-subtitle">{menuActiveItem.subtitle}</p>
+                        </div>
+                        <div className="portfolio-nav-list">
+                          {portfolioMenuItems.map((item, index) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className={`portfolio-nav-list-item${index === menuSelectedIndex ? " is-active" : ""}`}
+                              onClick={() => {
+                                setMenuSelectedIndex(index);
+                                setMenuFocusIndex(index);
+                              }}
+                            >
+                              <span className="portfolio-nav-list-disc" aria-hidden="true">
+                                <span
+                                  className="portfolio-nav-list-disc-surface"
+                                  style={
+                                    {
+                                      "--disc-artwork": `url("${item.artwork}")`,
+                                      "--disc-position": item.position,
+                                    } as CSSProperties
+                                  }
+                                />
+                              </span>
+                              <span className="portfolio-nav-list-copy">
+                                <span className="portfolio-nav-list-title">{item.title}</span>
+                                <span className="portfolio-nav-list-subtitle">{item.subtitle}</span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          className="portfolio-nav-enter portfolio-nav-enter--mobile"
+                          onClick={handleMenuEnter}
+                        >
+                          {menuActiveItem.ctaLabel} <span aria-hidden="true">&rarr;</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+            </div>
+          ) : null}
+
+        </>
+      ) : null}
+
+      {storyActive ? (
         <button
           type="button"
           className={`soundtrack-toggle${audioPlaying ? " is-playing" : ""}`}
@@ -1161,10 +1988,24 @@ export default function App() {
             />
           </div>
           <h1 data-reveal="stagger-children" data-stagger-base={120}>
-            <span className="headline-line" data-stagger-child>
+            <span
+              className="headline-line flicker-text"
+              data-stagger-child
+              data-flicker-style="neon"
+              data-flicker-speed="fast"
+              data-flicker-repeat="false"
+              data-flicker-delay="0"
+            >
               Pranav&apos;s
             </span>
-            <span className="headline-line accent-line" data-stagger-child>
+            <span
+              className="headline-line accent-line flicker-text"
+              data-stagger-child
+              data-flicker-style="neon"
+              data-flicker-speed="fast"
+              data-flicker-repeat="false"
+              data-flicker-delay="260"
+            >
               Portfolio
             </span>
           </h1>
@@ -1187,50 +2028,6 @@ export default function App() {
       <main className="layout" aria-hidden={!storyActive || !revealReady}>
         {storyActive ? (
           <div className="story-shell">
-            <aside
-              className="chapter-dial-shell"
-              aria-label="Current chapter dial"
-            >
-              <div
-                className="chapter-dial"
-                aria-hidden="true"
-                style={{ "--dial-rotation": `${pageIndex * 90}deg` } as CSSProperties}
-              >
-                <div className="chapter-dial-core">
-                  <span>{pages[pageIndex]?.label ?? "Story"}</span>
-                </div>
-                <div className="chapter-dial-ring">
-                  {chapterDialLabels.map((label, index) => (
-                    <span
-                      key={`${label}-${index}`}
-                      className="chapter-dial-word"
-                      style={
-                        {
-                          "--dial-index": index,
-                          "--dial-count": chapterDialLabels.length,
-                        } as CSSProperties
-                      }
-                    >
-                      {label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </aside>
-            <nav className="page-nav" aria-label="Portfolio pages">
-              {pages.map((page) => (
-                <button
-                  key={page.id}
-                  type="button"
-                  className={`page-tab${activePage === page.id ? " active" : ""}`}
-                  onClick={() => goToPage(page.id)}
-                  aria-pressed={activePage === page.id}
-                >
-                  {page.label}
-                </button>
-              ))}
-            </nav>
-
             {activePage === "story" ? (
               <>
                 <section className="intro-section">
