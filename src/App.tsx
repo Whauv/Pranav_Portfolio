@@ -1,5 +1,5 @@
 import { gsap } from "gsap";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
 
 const storyMoments = [
   {
@@ -328,6 +328,38 @@ const storyBackgroundAsset =
   "https://mir-s3-cdn-cf.behance.net/project_modules/hd/71c525241287029.6953aa1322398.gif";
 const soundtrackVideoId = "h0HC0UpfNuE";
 
+const galleryCards = [
+  {
+    id: "01",
+    title: "Auralize",
+    subtitle: "AI x Sensory Design",
+    bg: backgroundAsset,
+  },
+  {
+    id: "02",
+    title: "Quantrisk",
+    subtitle: "Regime-Aware Analytics",
+    bg: storyBackgroundAsset,
+  },
+  {
+    id: "03",
+    title: "Projects",
+    subtitle: "Selected Work & Case Studies",
+    bg: backgroundAsset,
+  },
+  {
+    id: "04",
+    title: "Savant",
+    subtitle: "Research Intelligence",
+    bg: storyBackgroundAsset,
+  },
+] as const;
+
+const CARD_COUNT = galleryCards.length;
+const CARD_WIDTH = 280;
+const CARD_HEIGHT = 360;
+const CARD_GAP_ANGLE = 360 / CARD_COUNT;
+
 function formatCount(
   value: number,
   decimals = 0,
@@ -574,6 +606,450 @@ export class FlickerText {
   }
 }
 
+function InertiaGallery({
+  onViewProject,
+}: {
+  onViewProject: (index: number) => void;
+}) {
+  const rotationRef = useRef(0);
+  const targetRotRef = useRef(0);
+  const [activeCard, setActiveCard] = useState(2);
+  const activeCardRef = useRef(2);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartRot = useRef(0);
+  const velocityRef = useRef(0);
+  const lastDragX = useRef(0);
+  const lastDragTime = useRef(0);
+  const galleryRaf = useRef<number>(0);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const isSnapping = useRef(false);
+
+  useEffect(() => {
+    rotationRef.current = -2 * CARD_GAP_ANGLE;
+    targetRotRef.current = -2 * CARD_GAP_ANGLE;
+    activeCardRef.current = 2;
+    setActiveCard(2);
+  }, []);
+
+  useEffect(() => {
+    const FRICTION = 0.92;
+    const SNAP_THRESHOLD = 0.15;
+    const LERP_SPEED = 0.12;
+
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    const getSnapAngle = (currentRot: number) => {
+      const normalized = ((currentRot % 360) + 360) % 360;
+      const nearest = Math.round(normalized / CARD_GAP_ANGLE) * CARD_GAP_ANGLE;
+      const turns = Math.floor(currentRot / 360);
+      return turns * 360 + nearest;
+    };
+
+    const getActiveIndex = (rot: number) => {
+      const normalized = ((-rot % 360) + 360) % 360;
+      return Math.round(normalized / CARD_GAP_ANGLE) % CARD_COUNT;
+    };
+
+    const tick = () => {
+      if (!isDragging.current) {
+        if (Math.abs(velocityRef.current) > SNAP_THRESHOLD) {
+          targetRotRef.current += velocityRef.current;
+          velocityRef.current *= FRICTION;
+        } else if (!isSnapping.current && Math.abs(velocityRef.current) > 0) {
+          velocityRef.current = 0;
+          isSnapping.current = true;
+          targetRotRef.current = getSnapAngle(targetRotRef.current);
+        }
+      }
+
+      rotationRef.current = lerp(
+        rotationRef.current,
+        targetRotRef.current,
+        isDragging.current ? 0.85 : LERP_SPEED,
+      );
+
+      if (
+        isSnapping.current &&
+        Math.abs(rotationRef.current - targetRotRef.current) < 0.05
+      ) {
+        rotationRef.current = targetRotRef.current;
+        isSnapping.current = false;
+      }
+
+      const newActive = getActiveIndex(rotationRef.current);
+      if (newActive !== activeCardRef.current) {
+        activeCardRef.current = newActive;
+        setActiveCard(newActive);
+      }
+
+      if (trackRef.current) {
+        const cards =
+          trackRef.current.querySelectorAll<HTMLElement>(".gallery-card");
+        cards.forEach((card, i) => {
+          const cardAngle = i * CARD_GAP_ANGLE;
+          const angle = (rotationRef.current + cardAngle) % 360;
+          const normalizedAngle = ((angle % 360) + 360) % 360;
+          const rad = (normalizedAngle * Math.PI) / 180;
+          const SPREAD = 260;
+          const DEPTH = 120;
+          const x = Math.sin(rad) * SPREAD;
+          const z = Math.cos(rad) * DEPTH;
+          const normalizedZ = (z + DEPTH) / (DEPTH * 2);
+          const scale = 0.72 + normalizedZ * 0.28;
+          const opacity = 0.35 + normalizedZ * 0.65;
+          const y = -normalizedZ * 20;
+          const rotY = -Math.sin(rad) * 28;
+          const zIndex = Math.round(normalizedZ * 10);
+
+          card.style.transform =
+            `translate(-50%, -50%) translate3d(${x}px, ${y}px, ${z}px) ` +
+            `rotateY(${rotY}deg) scale(${scale})`;
+          card.style.opacity = String(opacity);
+          card.style.zIndex = String(zIndex);
+          card.classList.toggle("is-active", i === newActive);
+        });
+      }
+
+      galleryRaf.current = window.requestAnimationFrame(tick);
+    };
+
+    galleryRaf.current = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(galleryRaf.current);
+  }, []);
+
+  const handleDragStart = (clientX: number) => {
+    isDragging.current = true;
+    isSnapping.current = false;
+    dragStartX.current = clientX;
+    dragStartRot.current = targetRotRef.current;
+    lastDragX.current = clientX;
+    lastDragTime.current = performance.now();
+    velocityRef.current = 0;
+  };
+
+  const handleDragMove = (clientX: number) => {
+    if (!isDragging.current) return;
+    const now = performance.now();
+    const dt = now - lastDragTime.current;
+    const delta = clientX - dragStartX.current;
+    const DRAG_SENSITIVITY = 0.35;
+    targetRotRef.current = dragStartRot.current + delta * DRAG_SENSITIVITY;
+
+    if (dt > 0) {
+      const instantVelocity = (clientX - lastDragX.current) * DRAG_SENSITIVITY;
+      velocityRef.current = velocityRef.current * 0.6 + instantVelocity * 0.4;
+    }
+
+    lastDragX.current = clientX;
+    lastDragTime.current = now;
+  };
+
+  const handleDragEnd = () => {
+    isDragging.current = false;
+  };
+
+  return (
+    <div className="inertia-gallery-scene">
+      <div className="gallery-glow" aria-hidden="true" />
+      <div
+        ref={trackRef}
+        className="gallery-track"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          handleDragStart(e.clientX);
+        }}
+        onMouseMove={(e) => handleDragMove(e.clientX)}
+        onMouseUp={handleDragEnd}
+        onMouseLeave={() => {
+          if (isDragging.current) handleDragEnd();
+        }}
+        onTouchStart={(e) => handleDragStart(e.touches[0].clientX)}
+        onTouchMove={(e) => handleDragMove(e.touches[0].clientX)}
+        onTouchEnd={handleDragEnd}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowLeft") {
+            targetRotRef.current -= CARD_GAP_ANGLE;
+            velocityRef.current = 0;
+          }
+          if (e.key === "ArrowRight") {
+            targetRotRef.current += CARD_GAP_ANGLE;
+            velocityRef.current = 0;
+          }
+        }}
+        tabIndex={0}
+        role="listbox"
+        aria-label="Project gallery"
+      >
+        {galleryCards.map((card, i) => (
+          <div
+            key={card.id}
+            className="gallery-card"
+            data-index={i}
+            aria-selected={activeCard === i}
+          >
+            <div
+              className="gallery-card-bg"
+              style={{ backgroundImage: `url(${card.bg})` }}
+            />
+            <div className="gallery-card-overlay" />
+            <div className="gallery-card-content">
+              <span className="gallery-card-number">{card.id}</span>
+              <h3 className="gallery-card-title">{card.title}</h3>
+            </div>
+            <div className="gallery-card-shimmer" aria-hidden="true" />
+          </div>
+        ))}
+      </div>
+      <div className="gallery-info">
+        <p className="gallery-info-subtitle">
+          {galleryCards[activeCard]?.subtitle}
+        </p>
+        <button
+          className="gallery-cta"
+          onClick={() => onViewProject(activeCard)}
+          aria-label={`View ${galleryCards[activeCard]?.title} project`}
+        >
+          See Projects <span aria-hidden="true">&rarr;</span>
+        </button>
+      </div>
+      <p className="gallery-hint">
+        Drag to spin the gallery, then release to feel the inertia.
+      </p>
+    </div>
+  );
+}
+
+function PortfolioMenuGallery({
+  items,
+  activeIndex,
+  onSelect,
+  onEnter,
+  trackRef,
+}: {
+  items: typeof portfolioMenuItems;
+  activeIndex: number;
+  onSelect: (index: number) => void;
+  onEnter: () => void;
+  trackRef: MutableRefObject<HTMLDivElement | null>;
+}) {
+  const gapAngle = 360 / items.length;
+  const rotationRef = useRef(0);
+  const targetRotRef = useRef(0);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartRot = useRef(0);
+  const velocityRef = useRef(0);
+  const lastDragX = useRef(0);
+  const lastDragTime = useRef(0);
+  const rafRef = useRef<number>(0);
+  const isSnapping = useRef(false);
+  const activeRef = useRef(activeIndex);
+
+  useEffect(() => {
+    const initial = -activeIndex * gapAngle;
+    rotationRef.current = initial;
+    targetRotRef.current = initial;
+    activeRef.current = activeIndex;
+  }, [activeIndex, gapAngle]);
+
+  useEffect(() => {
+    if (isDragging.current) return;
+    const nextRotation = -activeIndex * gapAngle;
+    targetRotRef.current = nextRotation;
+    if (Math.abs(rotationRef.current - nextRotation) < 0.01) {
+      rotationRef.current = nextRotation;
+    }
+  }, [activeIndex, gapAngle]);
+
+  useEffect(() => {
+    const FRICTION = 0.92;
+    const SNAP_THRESHOLD = 0.15;
+    const LERP_SPEED = 0.12;
+
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    const normalize = (value: number) => ((value % 360) + 360) % 360;
+
+    const getNearestIndex = (rot: number) =>
+      Math.round(normalize(-rot) / gapAngle) % items.length;
+
+    const getSnapAngle = (rot: number) => -getNearestIndex(rot) * gapAngle;
+
+    const tick = () => {
+      if (!isDragging.current) {
+        if (Math.abs(velocityRef.current) > SNAP_THRESHOLD) {
+          targetRotRef.current += velocityRef.current;
+          velocityRef.current *= FRICTION;
+        } else if (!isSnapping.current && Math.abs(velocityRef.current) > 0) {
+          velocityRef.current = 0;
+          isSnapping.current = true;
+          targetRotRef.current = getSnapAngle(targetRotRef.current);
+        }
+      }
+
+      rotationRef.current = lerp(
+        rotationRef.current,
+        targetRotRef.current,
+        isDragging.current ? 0.85 : LERP_SPEED,
+      );
+
+      if (
+        isSnapping.current &&
+        Math.abs(rotationRef.current - targetRotRef.current) < 0.05
+      ) {
+        rotationRef.current = targetRotRef.current;
+        isSnapping.current = false;
+      }
+
+      const nextActive = getNearestIndex(rotationRef.current);
+      if (nextActive !== activeRef.current) {
+        activeRef.current = nextActive;
+        onSelect(nextActive);
+      }
+
+      const track = trackRef.current;
+      if (track) {
+        const cards = track.querySelectorAll<HTMLElement>(".menu-gallery-card");
+        cards.forEach((card, index) => {
+          const angle = normalize(rotationRef.current + index * gapAngle);
+          const rad = (angle * Math.PI) / 180;
+          const spreadX = 310;
+          const spreadY = 46;
+          const depth = 170;
+          const x = Math.sin(rad) * spreadX;
+          const y = Math.cos(rad) * spreadY;
+          const z = Math.cos(rad) * depth;
+          const normalizedZ = (z + depth) / (depth * 2);
+          const scale = 0.72 + normalizedZ * 0.4;
+          const opacity = 0.3 + normalizedZ * 0.7;
+          const rotateY = -Math.sin(rad) * 24;
+          const zIndex = Math.round(normalizedZ * 10);
+
+          card.style.transform =
+            `translate(-50%, -50%) translate3d(${x}px, ${y}px, ${z}px) ` +
+            `rotateY(${rotateY}deg) scale(${scale})`;
+          card.style.opacity = String(opacity);
+          card.style.zIndex = String(zIndex);
+          card.classList.toggle("is-active", index === nextActive);
+        });
+      }
+
+      rafRef.current = window.requestAnimationFrame(tick);
+    };
+
+    rafRef.current = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(rafRef.current);
+  }, [gapAngle, items.length, onSelect, trackRef]);
+
+  const handleDragStart = (clientX: number) => {
+    isDragging.current = true;
+    isSnapping.current = false;
+    dragStartX.current = clientX;
+    dragStartRot.current = targetRotRef.current;
+    lastDragX.current = clientX;
+    lastDragTime.current = performance.now();
+    velocityRef.current = 0;
+  };
+
+  const handleDragMove = (clientX: number) => {
+    if (!isDragging.current) return;
+
+    const now = performance.now();
+    const dt = now - lastDragTime.current;
+    const delta = clientX - dragStartX.current;
+    const sensitivity = 0.32;
+    targetRotRef.current = dragStartRot.current + delta * sensitivity;
+
+    if (dt > 0) {
+      const instantVelocity = (clientX - lastDragX.current) * sensitivity;
+      velocityRef.current = velocityRef.current * 0.6 + instantVelocity * 0.4;
+    }
+
+    lastDragX.current = clientX;
+    lastDragTime.current = now;
+  };
+
+  const handleDragEnd = () => {
+    isDragging.current = false;
+  };
+
+  const moveBy = (step: number) => {
+    const nextIndex = (activeRef.current + step + items.length) % items.length;
+    velocityRef.current = 0;
+    isSnapping.current = true;
+    targetRotRef.current = -nextIndex * gapAngle;
+    onSelect(nextIndex);
+  };
+
+  return (
+    <div className="menu-gallery-shell">
+      <div
+        ref={trackRef}
+        className="menu-gallery-track"
+        onMouseDown={(event) => {
+          event.preventDefault();
+          handleDragStart(event.clientX);
+        }}
+        onMouseMove={(event) => handleDragMove(event.clientX)}
+        onMouseUp={handleDragEnd}
+        onMouseLeave={() => {
+          if (isDragging.current) handleDragEnd();
+        }}
+        onTouchStart={(event) => handleDragStart(event.touches[0].clientX)}
+        onTouchMove={(event) => handleDragMove(event.touches[0].clientX)}
+        onTouchEnd={handleDragEnd}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            moveBy(-1);
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            moveBy(1);
+          }
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onEnter();
+          }
+        }}
+        tabIndex={0}
+        role="listbox"
+        aria-label="Portfolio navigation gallery"
+      >
+        <div className="menu-gallery-orbit" aria-hidden="true" />
+        {items.map((item, index) => (
+          <button
+            key={item.id}
+            type="button"
+            className="menu-gallery-card"
+            aria-selected={activeIndex === index}
+            onClick={() => onSelect(index)}
+          >
+            <span
+              className="menu-gallery-card-bg"
+              style={
+                {
+                  "--menu-gallery-artwork": `url("${item.artwork}")`,
+                  "--menu-gallery-position": item.position,
+                } as CSSProperties
+              }
+            />
+            <span className="menu-gallery-card-overlay" />
+            <span className="menu-gallery-card-content">
+              <span className="menu-gallery-card-number">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <span className="menu-gallery-card-title">{item.title}</span>
+            </span>
+            <span className="menu-gallery-card-shimmer" aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [scrollY, setScrollY] = useState(0);
   const [viewportWidth, setViewportWidth] = useState(1);
@@ -612,10 +1088,7 @@ export default function App() {
   const menuMotionRef = useRef<HTMLDivElement>(null);
   const menuDetailsRef = useRef<HTMLDivElement>(null);
   const menuSelectorRef = useRef<HTMLDivElement>(null);
-  const menuOrbitRef = useRef<HTMLDivElement>(null);
-  const menuDiscRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const menuSurfaceRefs = useRef<Array<HTMLSpanElement | null>>([]);
-  const menuAngleOffsetRef = useRef(180);
+  const menuTrackRef = useRef<HTMLDivElement>(null);
 
   const pageIndex = useMemo(
     () => pages.findIndex((page) => page.id === activePage),
@@ -649,142 +1122,10 @@ export default function App() {
     [orbitScale],
   );
 
-  const menuOrbitRadius = useMemo(
-    () => {
-      if (viewportWidth < 600) {
-        return Math.min(viewportWidth * 0.38, viewportHeight * 0.38);
-      }
-      return Math.min(viewportWidth, viewportHeight) * 0.36;
-    },
-    [viewportHeight, viewportWidth],
-  );
-
-  const isMenuMobile = viewportWidth < 820;
-
-  const setMenuDiscRef = (index: number, node: HTMLButtonElement | null) => {
-    menuDiscRefs.current[index] = node;
-  };
-
-  const setMenuSurfaceRef = (index: number, node: HTMLSpanElement | null) => {
-    menuSurfaceRefs.current[index] = node;
-  };
-
-  const renderMenuOrbit = () => {
-    const selector = menuSelectorRef.current;
-    const orbit = menuOrbitRef.current;
-    const details = menuDetailsRef.current;
-    if (!selector) return;
-
-    if (!isMenuMobile) {
-      const orbitCx = viewportWidth * 0.65;
-      const orbitCy = viewportHeight * 0.5;
-      const orbitDiameter = Math.min(viewportWidth * 0.8, viewportHeight * 0.8);
-
-      gsap.set(selector, {
-        "--orbit-cx": `${orbitCx}px`,
-        "--orbit-cy": `${orbitCy}px`,
-        "--orbit-radius": `${menuOrbitRadius}px`,
-        "--orbit-diameter": `${orbitDiameter}px`,
-      });
-
-      if (details) {
-        gsap.set(details, { opacity: 1 });
-      }
-
-      if (orbit) {
-        gsap.set(orbit, {
-          left: orbitCx,
-          top: orbitCy,
-          width: menuOrbitRadius * 2,
-          height: menuOrbitRadius * 2,
-          xPercent: -50,
-          yPercent: -50,
-        });
-      }
-    }
-
-    portfolioMenuItems.forEach((item, index) => {
-      const button = menuDiscRefs.current[index];
-      if (!button) return;
-
-      if (isMenuMobile) {
-        button.tabIndex = index === menuFocusIndex ? 0 : -1;
-        button.setAttribute("aria-pressed", String(index === menuSelectedIndex));
-        return;
-      }
-
-      const orbitCx = viewportWidth * 0.65;
-      const orbitCy = viewportHeight * 0.5;
-      const angle = menuAngleOffsetRef.current + item.baseAngle;
-      const radians = angle * (Math.PI / 180);
-      const x = orbitCx + menuOrbitRadius * Math.cos(radians);
-      const y = orbitCy + menuOrbitRadius * Math.sin(radians);
-      const activeDistance =
-        Math.abs((((180 - angle) % 360) + 540) % 360 - 180);
-      const focusWeight = Math.max(0, 1 - activeDistance / 180);
-      const isActive = index === menuSelectedIndex;
-      const activeSize = Math.min(160, viewportWidth * 0.18);
-      const inactiveSize = Math.min(100, viewportWidth * 0.11);
-      const discSize = isActive ? activeSize : inactiveSize;
-      const scale = isActive ? 1 : 0.95 + focusWeight * 0.05;
-      const opacity = isActive ? 1 : 0.76 + focusWeight * 0.14;
-      const zIndex = Math.round(1000 + (180 - activeDistance));
-
-      gsap.set(button, { left: x, top: y, xPercent: -50, yPercent: -50, zIndex });
-      const disc = button.querySelector<HTMLElement>(".portfolio-cd-disc");
-      if (disc) {
-        gsap.set(disc, {
-          width: discSize,
-          height: discSize,
-          scale,
-          opacity,
-        });
-        disc.classList.toggle("is-active", isActive);
-      }
-
-      button.tabIndex = index === menuFocusIndex ? 0 : -1;
-      button.setAttribute("aria-pressed", String(isActive));
-    });
-  };
-
-  const animateToMenuIndex = (
-    nextIndex: number,
-    options: { immediate?: boolean; commitSelection?: boolean } = {},
-  ) => {
-    const { immediate = false, commitSelection = true } = options;
-    const targetOffset = 180 - portfolioMenuItems[nextIndex].baseAngle;
-    const currentOffset = menuAngleOffsetRef.current;
-    const delta = ((targetOffset - currentOffset + 540) % 360) - 180;
-    const finalOffset = currentOffset + delta;
-
-    if (commitSelection) {
-      setMenuSelectedIndex(nextIndex);
-    }
-    setMenuFocusIndex(nextIndex);
-
-    if (immediate) {
-      menuAngleOffsetRef.current = finalOffset;
-      renderMenuOrbit();
-      menuDiscRefs.current[nextIndex]?.focus({ preventScroll: true });
-      return;
-    }
-
-    const animatedOffset = { value: currentOffset };
-    gsap.to(animatedOffset, {
-      value: finalOffset,
-      duration: 1.05,
-      ease: "elastic.out(1, 0.76)",
-      onUpdate: () => {
-        menuAngleOffsetRef.current = animatedOffset.value;
-        renderMenuOrbit();
-      },
-      onComplete: () => {
-        menuAngleOffsetRef.current =
-          ((animatedOffset.value % 360) + 360) % 360;
-        renderMenuOrbit();
-        menuDiscRefs.current[nextIndex]?.focus({ preventScroll: true });
-      },
-    });
+  const animateToMenuIndex = (nextIndex: number) => {
+    const finalIndex = Math.max(0, Math.min(portfolioMenuItems.length - 1, nextIndex));
+    setMenuSelectedIndex(finalIndex);
+    setMenuFocusIndex(finalIndex);
   };
 
   const handleMenuEnter = () => {
@@ -806,10 +1147,10 @@ export default function App() {
     if (!menuOpen) return;
     const motion = menuMotionRef.current;
     const details = menuDetailsRef.current;
-    const orbit = menuOrbitRef.current;
-    const discs = menuDiscRefs.current.filter(Boolean);
+    const rail = menuSelectorRef.current;
+    const cards = menuTrackRef.current?.querySelectorAll(".menu-gallery-card");
 
-    if (!motion || !details || !orbit) {
+    if (!motion || !details || !rail) {
       setMenuOpen(false);
       return;
     }
@@ -828,12 +1169,11 @@ export default function App() {
     });
 
     timeline.to(
-      discs.reverse(),
+      cards ?? [],
       {
         opacity: 0,
-        scale: 0,
-        xPercent: -50,
-        yPercent: -50,
+        y: 20,
+        scale: 0.92,
         duration: 0.3,
         stagger: 0.03,
         ease: "power3.in",
@@ -842,7 +1182,7 @@ export default function App() {
     );
 
     timeline.to(
-      orbit,
+      rail,
       {
         opacity: 0,
         x: 60,
@@ -916,6 +1256,9 @@ export default function App() {
     const getMode = (target: HTMLElement | null): CursorMode => {
       if (!target) return "default";
       if (target.closest(".orbit-rig")) return "hover";
+      if (target.closest(".menu-gallery-track")) return "project";
+      if (target.closest(".gallery-track")) return "project";
+      if (target.closest(".gallery-cta")) return "cta";
       if (target.closest(".project-entry")) return "project";
       if (target.closest(".soundtrack-toggle")) return "soundtrack";
       if (
@@ -1449,23 +1792,21 @@ export default function App() {
       setMenuSelectedIndex(pageIndex);
       setMenuFocusIndex(pageIndex);
     }
-    menuAngleOffsetRef.current = 180 - portfolioMenuItems[menuSelectedIndex].baseAngle;
-    renderMenuOrbit();
-  }, [isMenuMobile, menuOpen, menuOrbitRadius, menuSelectedIndex, pageIndex]);
+  }, [menuOpen, pageIndex]);
 
   useEffect(() => {
     if (!menuOpen) return;
 
     const motion = menuMotionRef.current;
     const details = menuDetailsRef.current;
-    const orbit = menuOrbitRef.current;
-    const discs = menuDiscRefs.current.filter(Boolean);
+    const rail = menuSelectorRef.current;
+    const cards = menuTrackRef.current?.querySelectorAll(".menu-gallery-card");
 
-    if (!motion || !details || !orbit) return;
+    if (!motion || !details || !rail) return;
 
     gsap.set(details, { opacity: 0, x: -40 });
-    gsap.set(orbit, { opacity: 0, x: 60 });
-    gsap.set(discs, { opacity: 0, scale: 0, xPercent: -50, yPercent: -50 });
+    gsap.set(rail, { opacity: 0, x: 60 });
+    gsap.set(cards ?? [], { opacity: 0, y: 30, scale: 0.92 });
     gsap.set(motion, { opacity: 1, x: 0, scale: 1 });
     gsap.set(".portfolio-nav-overlay-backdrop", { opacity: 0 });
 
@@ -1476,7 +1817,7 @@ export default function App() {
       ease: "power2.out",
     });
     timeline.to(
-      orbit,
+      rail,
       {
         opacity: 1,
         x: 0,
@@ -1486,9 +1827,10 @@ export default function App() {
       0,
     );
     timeline.to(
-      discs,
+      cards ?? [],
       {
         opacity: 1,
+        y: 0,
         scale: 1,
         duration: 0.55,
         stagger: 0.07,
@@ -1506,9 +1848,8 @@ export default function App() {
       },
       0,
     );
-
-    animateToMenuIndex(menuSelectedIndex, { immediate: true, commitSelection: false });
-  }, [menuOpen, menuSelectedIndex]);
+    menuTrackRef.current?.focus({ preventScroll: true });
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -1519,7 +1860,7 @@ export default function App() {
     const timeline = gsap.timeline();
     timeline.fromTo(
       details.querySelectorAll(
-        ".portfolio-nav-label, .portfolio-nav-title, .portfolio-nav-subtitle, .portfolio-nav-meta, .portfolio-nav-enter",
+        ".portfolio-nav-label, .portfolio-nav-title, .portfolio-nav-subtitle, .portfolio-nav-meta, .portfolio-nav-enter, .portfolio-nav-helper",
       ),
       { opacity: 0, y: 12 },
       {
@@ -1530,51 +1871,6 @@ export default function App() {
         ease: "power3.out",
       },
     );
-  }, [menuOpen, menuSelectedIndex]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-
-    const orbit = menuOrbitRef.current;
-    if (!orbit) return;
-
-    const orbitTween = gsap.to(orbit, {
-      rotation: 360,
-      duration: 40,
-      ease: "none",
-      repeat: -1,
-      transformOrigin: "50% 50%",
-    });
-
-    const surfaceTweens = menuSurfaceRefs.current.map((surface, index) => {
-      if (!surface) return null;
-      const item = portfolioMenuItems[index];
-      const spinDuration = index === menuSelectedIndex ? 8 : item.spinDuration;
-
-      gsap.set(surface, { "--sheen-angle": `${Math.random() * 360}deg` });
-
-      const spinTween = gsap.to(surface, {
-        rotation: item.spinDirection * 360,
-        duration: spinDuration,
-        ease: "none",
-        repeat: -1,
-        transformOrigin: "50% 50%",
-      });
-
-      const sheenTween = gsap.to(surface, {
-        "--sheen-angle": `${360 + Math.random() * 360}deg`,
-        duration: spinDuration * 1.35,
-        ease: "none",
-        repeat: -1,
-      });
-
-      return [spinTween, sheenTween];
-    });
-
-    return () => {
-      orbitTween.kill();
-      surfaceTweens.forEach((entry) => entry?.forEach((tween) => tween.kill()));
-    };
   }, [menuOpen, menuSelectedIndex]);
 
   useEffect(() => {
@@ -1842,108 +2138,38 @@ export default function App() {
                     &times;
                   </button>
                   <div className="portfolio-nav-motion" ref={menuMotionRef}>
-                    {!isMenuMobile ? (
-                      <div className="portfolio-nav-selector" ref={menuSelectorRef}>
-                        <div className="portfolio-nav-orbit-system" ref={menuOrbitRef}>
-                          <div className="portfolio-nav-orbit-outline" aria-hidden="true" />
-                          <div className="portfolio-nav-orbit-inner" aria-hidden="true" />
-                          <div className="portfolio-nav-orbit-glow" aria-hidden="true" />
-                          <span className="portfolio-nav-tick portfolio-nav-tick--top" aria-hidden="true" />
-                          <span className="portfolio-nav-tick portfolio-nav-tick--right" aria-hidden="true" />
-                          <span className="portfolio-nav-tick portfolio-nav-tick--bottom" aria-hidden="true" />
-                          <span className="portfolio-nav-tick portfolio-nav-tick--left" aria-hidden="true" />
-                        </div>
-                        <div className="portfolio-nav-core" ref={menuDetailsRef}>
-                          <p className="portfolio-nav-label">Current selection</p>
-                          <h2 className="portfolio-nav-title">{menuActiveItem.title}</h2>
-                          <p className="portfolio-nav-subtitle">{menuActiveItem.subtitle}</p>
-                          <div className="portfolio-nav-meta">0{menuSelectedIndex + 1} / 04</div>
-                          <button
-                            type="button"
-                            className="portfolio-nav-enter"
-                            onClick={handleMenuEnter}
-                          >
-                            {menuActiveItem.ctaLabel} <span aria-hidden="true">&rarr;</span>
-                          </button>
-                        </div>
-                        {portfolioMenuItems.map((item, index) => (
-                          <button
-                            key={item.id}
-                            ref={(node) => setMenuDiscRef(index, node)}
-                            type="button"
-                            className="portfolio-cd-arm"
-                            aria-label={`${item.title} - ${item.subtitle}`}
-                            onClick={() => animateToMenuIndex(index)}
-                          >
-                            <span className="portfolio-cd-disc">
-                              <span
-                                ref={(node) => setMenuSurfaceRef(index, node)}
-                                className="portfolio-cd-surface"
-                                style={
-                                  {
-                                    "--disc-artwork": `url("${item.artwork}")`,
-                                    "--disc-position": item.position,
-                                  } as CSSProperties
-                                }
-                                aria-hidden="true"
-                              >
-                                <span className="portfolio-cd-sheen" />
-                                <span className="portfolio-cd-groove portfolio-cd-groove--one" />
-                                <span className="portfolio-cd-groove portfolio-cd-groove--two" />
-                                <span className="portfolio-cd-groove portfolio-cd-groove--three" />
-                                <span className="portfolio-cd-groove portfolio-cd-groove--four" />
-                                <span className="portfolio-cd-hole" />
-                              </span>
-                              <span className="portfolio-cd-label">{item.title}</span>
-                            </span>
-                          </button>
-                        ))}
+                    <div
+                      className="portfolio-nav-selector portfolio-nav-selector--inertia"
+                      ref={menuSelectorRef}
+                      aria-label="Navigation gallery"
+                    >
+                      <div className="portfolio-nav-rail-glow" aria-hidden="true" />
+                      <PortfolioMenuGallery
+                        items={portfolioMenuItems}
+                        activeIndex={menuSelectedIndex}
+                        onSelect={animateToMenuIndex}
+                        onEnter={handleMenuEnter}
+                        trackRef={menuTrackRef}
+                      />
+                    </div>
+                    <div className="portfolio-nav-core portfolio-nav-core--inertia" ref={menuDetailsRef}>
+                      <p className="portfolio-nav-label">Current selection</p>
+                      <h2 className="portfolio-nav-title">{menuActiveItem.title}</h2>
+                      <p className="portfolio-nav-subtitle">{menuActiveItem.subtitle}</p>
+                      <div className="portfolio-nav-meta">
+                        {String(menuSelectedIndex + 1).padStart(2, "0")} / {String(portfolioMenuItems.length).padStart(2, "0")}
                       </div>
-                    ) : (
-                      <div className="portfolio-nav-mobile" ref={menuDetailsRef}>
-                        <div className="portfolio-nav-mobile-header">
-                          <p className="portfolio-nav-label">Current selection</p>
-                          <h2 className="portfolio-nav-title">{menuActiveItem.title}</h2>
-                          <p className="portfolio-nav-subtitle">{menuActiveItem.subtitle}</p>
-                        </div>
-                        <div className="portfolio-nav-list">
-                          {portfolioMenuItems.map((item, index) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              className={`portfolio-nav-list-item${index === menuSelectedIndex ? " is-active" : ""}`}
-                              onClick={() => {
-                                setMenuSelectedIndex(index);
-                                setMenuFocusIndex(index);
-                              }}
-                            >
-                              <span className="portfolio-nav-list-disc" aria-hidden="true">
-                                <span
-                                  className="portfolio-nav-list-disc-surface"
-                                  style={
-                                    {
-                                      "--disc-artwork": `url("${item.artwork}")`,
-                                      "--disc-position": item.position,
-                                    } as CSSProperties
-                                  }
-                                />
-                              </span>
-                              <span className="portfolio-nav-list-copy">
-                                <span className="portfolio-nav-list-title">{item.title}</span>
-                                <span className="portfolio-nav-list-subtitle">{item.subtitle}</span>
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                        <button
-                          type="button"
-                          className="portfolio-nav-enter portfolio-nav-enter--mobile"
-                          onClick={handleMenuEnter}
-                        >
-                          {menuActiveItem.ctaLabel} <span aria-hidden="true">&rarr;</span>
-                        </button>
-                      </div>
-                    )}
+                      <button
+                        type="button"
+                        className="portfolio-nav-enter"
+                        onClick={handleMenuEnter}
+                      >
+                        {menuActiveItem.ctaLabel} <span aria-hidden="true">&rarr;</span>
+                      </button>
+                      <p className="portfolio-nav-helper">
+                        Drag to spin the gallery, then press enter to step into that chapter.
+                      </p>
+                    </div>
                   </div>
                 </section>
               </div>
@@ -2215,40 +2441,11 @@ export default function App() {
                   data-reveal-delay={0}
                   style={{ height: "1px", background: "var(--line-strong)", marginBottom: "0" }}
                 />
-                <div className="projects-index" role="list">
-                  {projectChapters.map((project) => (
-                    <article
-                      className="project-entry"
-                      key={project.name}
-                      role="listitem"
-                      tabIndex={0}
-                      aria-label={`${project.name}, ${project.type}`}
-                      data-reveal
-                      data-reveal-delay={project === projectChapters[0] ? 0 : project === projectChapters[1] ? 100 : project === projectChapters[2] ? 200 : 300}
-                    >
-                      <p className="project-role project-type">{project.type}</p>
-                      <h3>
-                        <span
-                          className="project-name"
-                          data-reveal="fade-left"
-                          data-reveal-delay={project === projectChapters[0] ? 80 : project === projectChapters[1] ? 180 : project === projectChapters[2] ? 280 : 380}
-                        >
-                          {project.name}
-                          <span className="project-arrow" aria-hidden="true">
-                            &rarr;
-                          </span>
-                        </span>
-                      </h3>
-                      <p
-                        className="project-copy text-scrim"
-                        data-reveal="fade-right"
-                        data-reveal-delay={project === projectChapters[0] ? 160 : project === projectChapters[1] ? 260 : project === projectChapters[2] ? 360 : 460}
-                      >
-                        {project.copy}
-                      </p>
-                    </article>
-                  ))}
-                </div>
+                <InertiaGallery
+                  onViewProject={(index) => {
+                    console.log("View project:", index);
+                  }}
+                />
               </section>
             ) : null}
 
