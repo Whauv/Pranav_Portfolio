@@ -1,5 +1,10 @@
 import { gsap } from "gsap";
 import { type CSSProperties, type MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
+import { ChatForm } from "./components/ChatForm";
+import { ClippedGallery } from "./components/ClippedGallery";
+import { MilestoneTimeline } from "./components/MilestoneTimeline";
+import { ParticleText } from "./components/ParticleText";
+import { VisitCounter } from "./components/VisitCounter";
 
 const storyMoments = [
   {
@@ -116,10 +121,13 @@ const portfolioMenuItems = [
     id: "story",
     title: "Story",
     subtitle: "Who I am and how I build",
+    description: "A guided read of how I think, build, and grow.",
+    tag: "NARRATIVE",
     ctaLabel: "Enter story",
     baseAngle: 180,
     spinDuration: 18,
     spinDirection: 1,
+    hue: 200,
     artwork:
       "https://mir-s3-cdn-cf.behance.net/project_modules/hd/71c525241287029.6953aa1322398.gif",
     position: "18% center",
@@ -128,10 +136,13 @@ const portfolioMenuItems = [
     id: "timeline",
     title: "Timeline",
     subtitle: "My journey and experience",
+    description: "Foundation years through CU Boulder Master's.",
+    tag: "JOURNEY",
     ctaLabel: "View timeline",
     baseAngle: -90,
     spinDuration: 24,
     spinDirection: -1,
+    hue: 0,
     artwork:
       "https://mir-s3-cdn-cf.behance.net/project_modules/disp/6c674e241287029.6953aa1320b47.gif",
     position: "center center",
@@ -140,10 +151,13 @@ const portfolioMenuItems = [
     id: "projects",
     title: "Projects",
     subtitle: "Selected work and case studies",
+    description: "Auralize, Quantrisk, Savant, and more.",
+    tag: "WORK",
     ctaLabel: "See projects",
     baseAngle: 0,
     spinDuration: 15,
     spinDirection: 1,
+    hue: 270,
     artwork:
       "https://mir-s3-cdn-cf.behance.net/project_modules/hd/71c525241287029.6953aa1322398.gif",
     position: "74% center",
@@ -152,10 +166,13 @@ const portfolioMenuItems = [
     id: "contact",
     title: "Contact",
     subtitle: "Ways to reach and collaborate",
+    description: "If this story resonates, the next step is a call.",
+    tag: "CONNECT",
     ctaLabel: "Get in touch",
     baseAngle: 90,
     spinDuration: 21,
     spinDirection: -1,
+    hue: 320,
     artwork:
       "https://mir-s3-cdn-cf.behance.net/project_modules/disp/6c674e241287029.6953aa1320b47.gif",
     position: "82% center",
@@ -231,14 +248,6 @@ const ORBIT_RINGS = ORBIT_LOADER_CONFIG.rings.map((label, index) => ({
 const ORBIT_LOADER_DURATION_MS = ORBIT_LOADER_CONFIG.duration;
 
 type PageId = (typeof pages)[number]["id"];
-type CursorMode =
-  | "default"
-  | "hover"
-  | "project"
-  | "heading"
-  | "cta"
-  | "text"
-  | "soundtrack";
 
 declare global {
   interface Window {
@@ -328,30 +337,54 @@ const storyBackgroundAsset =
   "https://mir-s3-cdn-cf.behance.net/project_modules/hd/71c525241287029.6953aa1322398.gif";
 const soundtrackVideoId = "h0HC0UpfNuE";
 
+const albumData = {
+  title: "Lofi City Drive",
+  artist: "Pranav's Portfolio OST",
+  primaryColor: "#1a0f3c",
+  accentColor: "#c8a96e",
+  labelColor: "#2a1a5c",
+};
+
 const galleryCards = [
   {
     id: "01",
-    title: "Auralize",
-    subtitle: "AI x Sensory Design",
+    title: "Story",
+    subtitle: "Origin & Direction",
+    description: "A guided read of how I think, build, and grow.",
+    tag: "NARRATIVE",
     bg: backgroundAsset,
+    hue: 200,
+    page: "story" as PageId,
   },
   {
     id: "02",
-    title: "Quantrisk",
-    subtitle: "Regime-Aware Analytics",
+    title: "Timeline",
+    subtitle: "My Journey & Experience",
+    description: "Foundation years through CU Boulder Master's.",
+    tag: "JOURNEY",
     bg: storyBackgroundAsset,
+    hue: 0,
+    page: "timeline" as PageId,
   },
   {
     id: "03",
     title: "Projects",
     subtitle: "Selected Work & Case Studies",
+    description: "Auralize, Quantrisk, Savant, and more.",
+    tag: "WORK",
     bg: backgroundAsset,
+    hue: 270,
+    page: "projects" as PageId,
   },
   {
     id: "04",
-    title: "Savant",
-    subtitle: "Research Intelligence",
+    title: "Contact",
+    subtitle: "Start a Conversation",
+    description: "If this story resonates, the next step is a call.",
+    tag: "CONNECT",
     bg: storyBackgroundAsset,
+    hue: 320,
+    page: "contact" as PageId,
   },
 ] as const;
 
@@ -615,6 +648,8 @@ function InertiaGallery({
   const targetRotRef = useRef(0);
   const [activeCard, setActiveCard] = useState(2);
   const activeCardRef = useRef(2);
+  const prevActiveRef = useRef(2);
+  const [infoVisible, setInfoVisible] = useState(true);
   const isDragging = useRef(false);
   const dragStartX = useRef(0);
   const dragStartRot = useRef(0);
@@ -624,11 +659,17 @@ function InertiaGallery({
   const galleryRaf = useRef<number>(0);
   const trackRef = useRef<HTMLDivElement>(null);
   const isSnapping = useRef(false);
+  const infoTimeoutRef = useRef(0);
+  const boxShadowTimeoutRef = useRef(0);
+  const snapClassTimeoutRef = useRef(0);
+  const tiltRafRef = useRef(0);
+  const tiltRef = useRef({ x: 0, y: 0, lerpX: 0, lerpY: 0 });
 
   useEffect(() => {
     rotationRef.current = -2 * CARD_GAP_ANGLE;
     targetRotRef.current = -2 * CARD_GAP_ANGLE;
     activeCardRef.current = 2;
+    prevActiveRef.current = 2;
     setActiveCard(2);
   }, []);
 
@@ -681,6 +722,36 @@ function InertiaGallery({
       if (newActive !== activeCardRef.current) {
         activeCardRef.current = newActive;
         setActiveCard(newActive);
+        setInfoVisible(false);
+        window.clearTimeout(infoTimeoutRef.current);
+        infoTimeoutRef.current = window.setTimeout(() => {
+          setInfoVisible(true);
+        }, 180);
+
+        if (newActive !== prevActiveRef.current) {
+          prevActiveRef.current = newActive;
+          const cards =
+            trackRef.current?.querySelectorAll<HTMLElement>(".gallery-card");
+          const activeEl = cards?.[newActive];
+          if (activeEl) {
+            activeEl.classList.remove("snap-pulse");
+            void activeEl.offsetWidth;
+            activeEl.classList.add("snap-pulse");
+            activeEl.style.boxShadow = `
+              0 30px 80px rgba(0,0,0,0.65),
+              0 0 0 1px rgba(200,169,110,0.9),
+              0 0 40px rgba(200,169,110,0.35)
+            `;
+            window.clearTimeout(boxShadowTimeoutRef.current);
+            boxShadowTimeoutRef.current = window.setTimeout(() => {
+              activeEl.style.boxShadow = "";
+            }, 350);
+            window.clearTimeout(snapClassTimeoutRef.current);
+            snapClassTimeoutRef.current = window.setTimeout(() => {
+              activeEl.classList.remove("snap-pulse");
+            }, 600);
+          }
+        }
       }
 
       if (trackRef.current) {
@@ -697,17 +768,25 @@ function InertiaGallery({
           const z = Math.cos(rad) * DEPTH;
           const normalizedZ = (z + DEPTH) / (DEPTH * 2);
           const scale = 0.72 + normalizedZ * 0.28;
-          const opacity = 0.35 + normalizedZ * 0.65;
+          const opacity = 0.55 + normalizedZ * 0.45;
           const y = -normalizedZ * 20;
-          const rotY = -Math.sin(rad) * 28;
+          const rotY = -Math.sin(rad) * 22;
           const zIndex = Math.round(normalizedZ * 10);
+          const isActive = i === newActive;
+          const tiltX = isActive ? parseFloat(card.dataset.tiltX ?? "0") : 0;
+          const tiltY = isActive ? parseFloat(card.dataset.tiltY ?? "0") : 0;
+          const tiltStr = isActive
+            ? `rotateX(${tiltX}deg) rotateY(${rotY + tiltY}deg)`
+            : `rotateY(${rotY}deg)`;
 
           card.style.transform =
-            `translate(-50%, -50%) translate3d(${x}px, ${y}px, ${z}px) ` +
-            `rotateY(${rotY}deg) scale(${scale})`;
+            `translate(-50%, -50%) ` +
+            `translate3d(${x}px, ${y}px, ${z}px) ` +
+            `${tiltStr} ` +
+            `scale(${scale})`;
           card.style.opacity = String(opacity);
           card.style.zIndex = String(zIndex);
-          card.classList.toggle("is-active", i === newActive);
+          card.classList.toggle("is-active", isActive);
         });
       }
 
@@ -715,7 +794,77 @@ function InertiaGallery({
     };
 
     galleryRaf.current = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(galleryRaf.current);
+    return () => {
+      window.cancelAnimationFrame(galleryRaf.current);
+      window.clearTimeout(infoTimeoutRef.current);
+      window.clearTimeout(boxShadowTimeoutRef.current);
+      window.clearTimeout(snapClassTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (window.innerWidth <= 600) return;
+
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const activeEl = trackRef.current?.querySelector<HTMLElement>(
+        ".gallery-card.is-active",
+      );
+      if (!activeEl) return;
+
+      const rect = activeEl.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+
+      tiltRef.current.x = ((event.clientY - cy) / (rect.height / 2)) * -6;
+      tiltRef.current.y = ((event.clientX - cx) / (rect.width / 2)) * 8;
+    };
+
+    const animateTilt = () => {
+      tiltRef.current.lerpX = lerp(tiltRef.current.lerpX, tiltRef.current.x, 0.08);
+      tiltRef.current.lerpY = lerp(tiltRef.current.lerpY, tiltRef.current.y, 0.08);
+
+      const activeEl = trackRef.current?.querySelector<HTMLElement>(
+        ".gallery-card.is-active",
+      );
+      if (activeEl && !isDragging.current) {
+        activeEl.dataset.tiltX = String(tiltRef.current.lerpX);
+        activeEl.dataset.tiltY = String(tiltRef.current.lerpY);
+      }
+
+      tiltRafRef.current = window.requestAnimationFrame(animateTilt);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    tiltRafRef.current = window.requestAnimationFrame(animateTilt);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.cancelAnimationFrame(tiltRafRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (window.innerWidth <= 600) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      if (!trackRef.current) return;
+      const rect = trackRef.current.getBoundingClientRect();
+      const inView = rect.top < window.innerHeight && rect.bottom > 0;
+      if (!inView) return;
+
+      event.preventDefault();
+      const WHEEL_SENSITIVITY = 0.18;
+      velocityRef.current += event.deltaY * WHEEL_SENSITIVITY * 0.01;
+      velocityRef.current = Math.max(Math.min(velocityRef.current, 8), -8);
+      isSnapping.current = false;
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
+    };
   }, []);
 
   const handleDragStart = (clientX: number) => {
@@ -751,6 +900,7 @@ function InertiaGallery({
 
   return (
     <div className="inertia-gallery-scene">
+      <div className="gallery-scene-scrim" aria-hidden="true" />
       <div className="gallery-glow" aria-hidden="true" />
       <div
         ref={trackRef}
@@ -768,13 +918,21 @@ function InertiaGallery({
         onTouchMove={(e) => handleDragMove(e.touches[0].clientX)}
         onTouchEnd={handleDragEnd}
         onKeyDown={(e) => {
-          if (e.key === "ArrowLeft") {
+          if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+            e.preventDefault();
             targetRotRef.current -= CARD_GAP_ANGLE;
             velocityRef.current = 0;
+            isSnapping.current = false;
           }
-          if (e.key === "ArrowRight") {
+          if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+            e.preventDefault();
             targetRotRef.current += CARD_GAP_ANGLE;
             velocityRef.current = 0;
+            isSnapping.current = false;
+          }
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onViewProject(activeCard);
           }
         }}
         tabIndex={0}
@@ -785,12 +943,29 @@ function InertiaGallery({
           <div
             key={card.id}
             className="gallery-card"
+            data-cursor="hover"
             data-index={i}
             aria-selected={activeCard === i}
+            onClick={() => {
+              if (i !== activeCard) {
+                const delta = i - activeCard;
+                let steps = delta;
+                if (Math.abs(delta) > CARD_COUNT / 2) {
+                  steps = delta > 0 ? delta - CARD_COUNT : delta + CARD_COUNT;
+                }
+                targetRotRef.current -= steps * CARD_GAP_ANGLE;
+                velocityRef.current = 0;
+                isSnapping.current = false;
+              }
+            }}
+            style={{ cursor: i !== activeCard ? "pointer" : "default" }}
           >
             <div
               className="gallery-card-bg"
-              style={{ backgroundImage: `url(${card.bg})` }}
+              style={{
+                backgroundImage: `url(${card.bg})`,
+                filter: `hue-rotate(${card.hue}deg) saturate(0.9) contrast(1.02) brightness(0.8)`,
+              }}
             />
             <div className="gallery-card-overlay" />
             <div className="gallery-card-content">
@@ -801,18 +976,33 @@ function InertiaGallery({
           </div>
         ))}
       </div>
-      <div className="gallery-info">
-        <p className="gallery-info-subtitle">
-          {galleryCards[activeCard]?.subtitle}
-        </p>
+
+      <div className={`gallery-info${infoVisible ? " is-visible" : ""}`}>
+        <div className="gallery-info-rule" aria-hidden="true" />
+        <span className="gallery-info-label">Current Selection</span>
+        <span className="gallery-info-tag">[ {galleryCards[activeCard]?.tag} ]</span>
+        <h2 className="gallery-info-title">{galleryCards[activeCard]?.title}</h2>
+        <p className="gallery-info-subtitle">{galleryCards[activeCard]?.subtitle}</p>
+        <p className="gallery-info-desc">{galleryCards[activeCard]?.description}</p>
+        <div className="gallery-counter">
+          <span className="gallery-counter-rule" aria-hidden="true" />
+          <span className="gallery-counter-text">
+            {String(activeCard + 1).padStart(2, "0")}
+            <span className="gallery-counter-sep"> / </span>
+            {String(CARD_COUNT).padStart(2, "0")}
+          </span>
+          <span className="gallery-counter-rule" aria-hidden="true" />
+        </div>
         <button
           className="gallery-cta"
           onClick={() => onViewProject(activeCard)}
-          aria-label={`View ${galleryCards[activeCard]?.title} project`}
+          aria-label={`View ${galleryCards[activeCard]?.title}`}
         >
-          See Projects <span aria-hidden="true">&rarr;</span>
+          View {galleryCards[activeCard]?.title}
+          <span aria-hidden="true">&rarr;</span>
         </button>
       </div>
+
       <p className="gallery-hint">
         Drag to spin the gallery, then release to feel the inertia.
       </p>
@@ -845,12 +1035,18 @@ function PortfolioMenuGallery({
   const rafRef = useRef<number>(0);
   const isSnapping = useRef(false);
   const activeRef = useRef(activeIndex);
+  const prevActiveRef = useRef(activeIndex);
+  const boxShadowTimeoutRef = useRef(0);
+  const snapClassTimeoutRef = useRef(0);
+  const tiltRafRef = useRef(0);
+  const tiltRef = useRef({ x: 0, y: 0, lerpX: 0, lerpY: 0 });
 
   useEffect(() => {
     const initial = -activeIndex * gapAngle;
     rotationRef.current = initial;
     targetRotRef.current = initial;
     activeRef.current = activeIndex;
+    prevActiveRef.current = activeIndex;
   }, [activeIndex, gapAngle]);
 
   useEffect(() => {
@@ -906,6 +1102,30 @@ function PortfolioMenuGallery({
       if (nextActive !== activeRef.current) {
         activeRef.current = nextActive;
         onSelect(nextActive);
+        if (nextActive !== prevActiveRef.current) {
+          prevActiveRef.current = nextActive;
+          const cards =
+            trackRef.current?.querySelectorAll<HTMLElement>(".menu-gallery-card");
+          const activeEl = cards?.[nextActive];
+          if (activeEl) {
+            activeEl.classList.remove("snap-pulse");
+            void activeEl.offsetWidth;
+            activeEl.classList.add("snap-pulse");
+            activeEl.style.boxShadow = `
+              0 30px 80px rgba(0,0,0,0.65),
+              0 0 0 1px rgba(200,169,110,0.9),
+              0 0 40px rgba(200,169,110,0.35)
+            `;
+            window.clearTimeout(boxShadowTimeoutRef.current);
+            boxShadowTimeoutRef.current = window.setTimeout(() => {
+              activeEl.style.boxShadow = "";
+            }, 350);
+            window.clearTimeout(snapClassTimeoutRef.current);
+            snapClassTimeoutRef.current = window.setTimeout(() => {
+              activeEl.classList.remove("snap-pulse");
+            }, 600);
+          }
+        }
       }
 
       const track = trackRef.current;
@@ -918,20 +1138,26 @@ function PortfolioMenuGallery({
           const spreadY = 46;
           const depth = 170;
           const x = Math.sin(rad) * spreadX;
-          const y = Math.cos(rad) * spreadY;
+          const y = Math.cos(rad) * spreadY - 26;
           const z = Math.cos(rad) * depth;
           const normalizedZ = (z + depth) / (depth * 2);
           const scale = 0.72 + normalizedZ * 0.4;
-          const opacity = 0.3 + normalizedZ * 0.7;
-          const rotateY = -Math.sin(rad) * 24;
+          const opacity = 0.55 + normalizedZ * 0.45;
+          const rotateY = -Math.sin(rad) * 22;
           const zIndex = Math.round(normalizedZ * 10);
+          const isActive = index === nextActive;
+          const tiltX = isActive ? parseFloat(card.dataset.tiltX ?? "0") : 0;
+          const tiltY = isActive ? parseFloat(card.dataset.tiltY ?? "0") : 0;
+          const tiltStr = isActive
+            ? `rotateX(${tiltX}deg) rotateY(${rotateY + tiltY}deg)`
+            : `rotateY(${rotateY}deg)`;
 
           card.style.transform =
             `translate(-50%, -50%) translate3d(${x}px, ${y}px, ${z}px) ` +
-            `rotateY(${rotateY}deg) scale(${scale})`;
+            `${tiltStr} scale(${scale})`;
           card.style.opacity = String(opacity);
           card.style.zIndex = String(zIndex);
-          card.classList.toggle("is-active", index === nextActive);
+          card.classList.toggle("is-active", isActive);
         });
       }
 
@@ -939,8 +1165,72 @@ function PortfolioMenuGallery({
     };
 
     rafRef.current = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(rafRef.current);
+    return () => {
+      window.cancelAnimationFrame(rafRef.current);
+      window.clearTimeout(boxShadowTimeoutRef.current);
+      window.clearTimeout(snapClassTimeoutRef.current);
+    };
   }, [gapAngle, items.length, onSelect, trackRef]);
+
+  useEffect(() => {
+    if (window.innerWidth <= 600) return;
+
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const activeEl = trackRef.current?.querySelector<HTMLElement>(
+        ".menu-gallery-card.is-active",
+      );
+      if (!activeEl) return;
+
+      const rect = activeEl.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+
+      tiltRef.current.x = ((event.clientY - cy) / (rect.height / 2)) * -6;
+      tiltRef.current.y = ((event.clientX - cx) / (rect.width / 2)) * 8;
+    };
+
+    const animateTilt = () => {
+      tiltRef.current.lerpX = lerp(tiltRef.current.lerpX, tiltRef.current.x, 0.08);
+      tiltRef.current.lerpY = lerp(tiltRef.current.lerpY, tiltRef.current.y, 0.08);
+      const activeEl = trackRef.current?.querySelector<HTMLElement>(
+        ".menu-gallery-card.is-active",
+      );
+      if (activeEl && !isDragging.current) {
+        activeEl.dataset.tiltX = String(tiltRef.current.lerpX);
+        activeEl.dataset.tiltY = String(tiltRef.current.lerpY);
+      }
+      tiltRafRef.current = window.requestAnimationFrame(animateTilt);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    tiltRafRef.current = window.requestAnimationFrame(animateTilt);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.cancelAnimationFrame(tiltRafRef.current);
+    };
+  }, [trackRef]);
+
+  useEffect(() => {
+    if (window.innerWidth <= 600) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      if (!trackRef.current) return;
+      const rect = trackRef.current.getBoundingClientRect();
+      const inView = rect.top < window.innerHeight && rect.bottom > 0;
+      if (!inView) return;
+
+      event.preventDefault();
+      velocityRef.current += event.deltaY * 0.18 * 0.01;
+      velocityRef.current = Math.max(Math.min(velocityRef.current, 8), -8);
+      isSnapping.current = false;
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: false });
+    return () => window.removeEventListener("wheel", handleWheel);
+  }, [trackRef]);
 
   const handleDragStart = (clientX: number) => {
     isDragging.current = true;
@@ -984,6 +1274,7 @@ function PortfolioMenuGallery({
 
   return (
     <div className="menu-gallery-shell">
+      <div className="menu-gallery-glow" aria-hidden="true" />
       <div
         ref={trackRef}
         className="menu-gallery-track"
@@ -1000,11 +1291,11 @@ function PortfolioMenuGallery({
         onTouchMove={(event) => handleDragMove(event.touches[0].clientX)}
         onTouchEnd={handleDragEnd}
         onKeyDown={(event) => {
-          if (event.key === "ArrowLeft") {
+          if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
             event.preventDefault();
             moveBy(-1);
           }
-          if (event.key === "ArrowRight") {
+          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
             event.preventDefault();
             moveBy(1);
           }
@@ -1023,8 +1314,21 @@ function PortfolioMenuGallery({
             key={item.id}
             type="button"
             className="menu-gallery-card"
+            data-cursor="hover"
             aria-selected={activeIndex === index}
-            onClick={() => onSelect(index)}
+            onClick={() => {
+              if (index !== activeIndex) {
+                const delta = index - activeIndex;
+                let steps = delta;
+                if (Math.abs(delta) > items.length / 2) {
+                  steps = delta > 0 ? delta - items.length : delta + items.length;
+                }
+                targetRotRef.current -= steps * gapAngle;
+                velocityRef.current = 0;
+                isSnapping.current = false;
+              }
+            }}
+            style={{ cursor: index !== activeIndex ? "pointer" : "default" }}
           >
             <span
               className="menu-gallery-card-bg"
@@ -1032,6 +1336,7 @@ function PortfolioMenuGallery({
                 {
                   "--menu-gallery-artwork": `url("${item.artwork}")`,
                   "--menu-gallery-position": item.position,
+                  "--menu-gallery-filter": `hue-rotate(${item.hue}deg) saturate(0.9) contrast(1.02) brightness(0.8)`,
                 } as CSSProperties
               }
             />
@@ -1060,11 +1365,6 @@ export default function App() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [orbitLoading, setOrbitLoading] = useState(false);
   const [orbitDone, setOrbitDone] = useState(false);
-  const [cursor, setCursor] = useState({
-    x: 0,
-    y: 0,
-    mode: "default" as CursorMode,
-  });
   const [audioReady, setAudioReady] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [devSoundMuted, setDevSoundMuted] = useState(true);
@@ -1072,15 +1372,34 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuFocusIndex, setMenuFocusIndex] = useState(0);
   const [menuSelectedIndex, setMenuSelectedIndex] = useState(0);
-  const cursorTrailRef = useRef<HTMLDivElement>(null);
-  const cursorDotRef = useRef<HTMLDivElement>(null);
+  const [menuInfoVisible, setMenuInfoVisible] = useState(true);
+  const cursorX = useRef(0);
+  const cursorY = useRef(0);
+  const cursorLerpX = useRef(0);
+  const cursorLerpY = useRef(0);
+  const cursorPrevX = useRef(0);
+  const cursorPrevY = useRef(0);
+  const cursorVelX = useRef(0);
+  const cursorVelY = useRef(0);
+  const cursorVelLerpX = useRef(0);
+  const cursorVelLerpY = useRef(0);
+  const [cursorState, setCursorState] = useState<
+    "default" | "hover" | "click" | "text" | "drag"
+  >("default");
+  const cursorRef = useRef<HTMLDivElement>(null);
   const cursorRingRef = useRef<HTMLDivElement>(null);
-  const ringPos = useRef({ x: 0, y: 0 });
-  const trailPos = useRef({ x: 0, y: 0 });
-  const mousePos = useRef({ x: 0, y: 0 });
-  const rafRef = useRef<number>(0);
+  const cursorRippleRef = useRef<HTMLDivElement>(null);
+  const ringLerpX = useRef(0);
+  const ringLerpY = useRef(0);
+  const rippleTimeoutRef = useRef<number | null>(null);
+  const cursorRafRef = useRef<number>(0);
   const playerRef = useRef<{ playVideo: () => void; pauseVideo: () => void } | null>(null);
   const shouldAutoplayRef = useRef(false);
+  const vinylRotationRef = useRef(0);
+  const spinSpeedRef = useRef(0);
+  const vinylRafRef = useRef<number>(0);
+  const vinylDiscRef = useRef<HTMLDivElement>(null);
+  const vinylPlayerRef = useRef<HTMLDivElement>(null);
   const orbitSceneRef = useRef<HTMLDivElement>(null);
   const orbitRef = useRef<HTMLDivElement>(null);
   const orbitRafRef = useRef<number>(0);
@@ -1089,6 +1408,7 @@ export default function App() {
   const menuDetailsRef = useRef<HTMLDivElement>(null);
   const menuSelectorRef = useRef<HTMLDivElement>(null);
   const menuTrackRef = useRef<HTMLDivElement>(null);
+  const menuInfoTimeoutRef = useRef(0);
 
   const pageIndex = useMemo(
     () => pages.findIndex((page) => page.id === activePage),
@@ -1120,6 +1440,24 @@ export default function App() {
         };
       }),
     [orbitScale],
+  );
+
+  const vinylWaveBars = useMemo(
+    () =>
+      Array.from({ length: 36 }, (_, i) => {
+        const envelope = Math.sin((i / 36) * Math.PI);
+        const detail =
+          0.4 + Math.abs(Math.sin(i * 1.3)) * 0.4 + Math.abs(Math.sin(i * 2.7)) * 0.2;
+        const maxHeight = 4 + envelope * detail * 18;
+
+        return {
+          key: i,
+          delay: `${i * 0.035}s`,
+          max: `${maxHeight}px`,
+          min: `${Math.max(2, maxHeight * 0.15)}px`,
+        };
+      }),
+    [],
   );
 
   const animateToMenuIndex = (nextIndex: number) => {
@@ -1253,86 +1591,158 @@ export default function App() {
     const finePointer = window.matchMedia("(pointer: fine)");
     if (!finePointer.matches) return;
 
-    const getMode = (target: HTMLElement | null): CursorMode => {
-      if (!target) return "default";
-      if (target.closest(".orbit-rig")) return "hover";
-      if (target.closest(".menu-gallery-track")) return "project";
-      if (target.closest(".gallery-track")) return "project";
-      if (target.closest(".gallery-cta")) return "cta";
-      if (target.closest(".project-entry")) return "project";
-      if (target.closest(".soundtrack-toggle")) return "soundtrack";
+    const onMouseMove = (e: MouseEvent) => {
+      cursorX.current = e.clientX;
+      cursorY.current = e.clientY;
+
+      const target = e.target as HTMLElement | null;
       if (
-        target.closest(
-          ".scroll-invite, .inline-actions a, .inline-toggle, .cta-link, .page-nav-btn",
-        )
+        target?.closest("button") ||
+        target?.closest("a") ||
+        target?.closest(".gallery-cta") ||
+        target?.closest(".vinyl-play-btn") ||
+        target?.closest(".orbit-skip") ||
+        target?.closest('[data-cursor="hover"]')
       ) {
-        return "cta";
+        setCursorState("hover");
+      } else if (target?.closest(".gallery-track")) {
+        setCursorState("drag");
+      } else {
+        setCursorState("default");
       }
-      if (target.closest("h1, h2, h3")) return "heading";
-      if (target.closest("button, a, .page-tab, .contact-link")) return "hover";
-      if (target.closest("p")) return "text";
-      return "default";
     };
 
-    const handleMove = (e: MouseEvent) => {
-      mousePos.current = { x: e.clientX, y: e.clientY };
-      const mode = getMode(e.target as HTMLElement);
+    const onMouseDown = () => {
+      setCursorState("click");
 
-      if (cursorDotRef.current) {
-        cursorDotRef.current.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`;
+      const ripple = cursorRippleRef.current;
+      if (ripple) {
+        ripple.classList.remove("is-pulsing");
+        void ripple.offsetWidth;
+        ripple.classList.add("is-pulsing");
+        if (rippleTimeoutRef.current) {
+          window.clearTimeout(rippleTimeoutRef.current);
+        }
+        rippleTimeoutRef.current = window.setTimeout(() => {
+          ripple.classList.remove("is-pulsing");
+          rippleTimeoutRef.current = null;
+        }, 520);
       }
-
-      setCursor((prev) =>
-        prev.mode !== mode ? { x: e.clientX, y: e.clientY, mode } : prev,
-      );
     };
 
-    const handleLeave = () => {
-      setCursor((prev) => ({ ...prev, mode: "default" }));
+    const onMouseUp = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest("button") ||
+        target?.closest("a") ||
+        target?.closest('[data-cursor="hover"]')
+      ) {
+        setCursorState("hover");
+      } else {
+        setCursorState("default");
+      }
     };
 
-    const animateRing = () => {
-      const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-      const speed = 0.11;
-      const trailSpeed = 0.06;
+    const interactiveEls = document.querySelectorAll<HTMLElement>(
+      'button, a, [data-cursor="hover"]',
+    );
+    const LERP_DOT = 0.18;
+    const LERP_RING = 0.09;
+    const LERP_VEL = 0.10;
+    const MAX_STRETCH = 2.2;
+    const MAX_SPEED = 22;
+    const MAGNETIC_RADIUS = 60;
+    const MAGNETIC_STRENGTH = 0.25;
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
-      ringPos.current.x = lerp(ringPos.current.x, mousePos.current.x, speed);
-      ringPos.current.y = lerp(ringPos.current.y, mousePos.current.y, speed);
-      trailPos.current.x = lerp(trailPos.current.x, mousePos.current.x, trailSpeed);
-      trailPos.current.y = lerp(trailPos.current.y, mousePos.current.y, trailSpeed);
+    const tick = () => {
+      let magnetX = cursorX.current;
+      let magnetY = cursorY.current;
+
+      interactiveEls.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = cursorX.current - cx;
+        const dy = cursorY.current - cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < MAGNETIC_RADIUS) {
+          const pull = (1 - dist / MAGNETIC_RADIUS) * MAGNETIC_STRENGTH;
+          magnetX -= dx * pull;
+          magnetY -= dy * pull;
+        }
+      });
+
+      cursorLerpX.current = lerp(cursorLerpX.current, magnetX, LERP_DOT);
+      cursorLerpY.current = lerp(cursorLerpY.current, magnetY, LERP_DOT);
+      ringLerpX.current = lerp(ringLerpX.current, cursorX.current, LERP_RING);
+      ringLerpY.current = lerp(ringLerpY.current, cursorY.current, LERP_RING);
+
+      const rawVelX = cursorLerpX.current - cursorPrevX.current;
+      const rawVelY = cursorLerpY.current - cursorPrevY.current;
+      cursorPrevX.current = cursorLerpX.current;
+      cursorPrevY.current = cursorLerpY.current;
+      cursorVelX.current = rawVelX;
+      cursorVelY.current = rawVelY;
+
+      cursorVelLerpX.current = lerp(cursorVelLerpX.current, cursorVelX.current, LERP_VEL);
+      cursorVelLerpY.current = lerp(cursorVelLerpY.current, cursorVelY.current, LERP_VEL);
+
+      const vx = cursorVelLerpX.current;
+      const vy = cursorVelLerpY.current;
+      const speed = Math.sqrt(vx * vx + vy * vy);
+      const stretchAmount =
+        1 + (MAX_STRETCH - 1) * clamp(speed / MAX_SPEED, 0, 1);
+      const angle = speed > 0.1 ? Math.atan2(vy, vx) * (180 / Math.PI) : 0;
+      const scaleX = stretchAmount;
+      const scaleY = 1 / Math.sqrt(stretchAmount);
+
+      if (cursorRef.current) {
+        const el = cursorRef.current;
+        el.style.left = `${cursorLerpX.current}px`;
+        el.style.top = `${cursorLerpY.current}px`;
+        el.style.transform =
+          `translate(-50%, -50%) rotate(${angle}deg) scaleX(${scaleX}) scaleY(${scaleY})`;
+
+        if (cursorState === "default") {
+          const glowOpacity = 0.4 + clamp(speed / MAX_SPEED, 0, 1) * 0.5;
+          el.style.boxShadow =
+            `0 0 ${6 + speed * 0.5}px rgba(255,255,255,${glowOpacity}),` +
+            `0 0 ${14 + speed}px rgba(255,255,255,${glowOpacity * 0.35})`;
+        } else {
+          el.style.removeProperty("box-shadow");
+        }
+      }
 
       if (cursorRingRef.current) {
-        const dx = mousePos.current.x - ringPos.current.x;
-        const dy = mousePos.current.y - ringPos.current.y;
-        const ringVelocity = Math.min(Math.hypot(dx, dy), 120);
-        const ringAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-        const squeeze = 1 + ringVelocity / 140;
-
-        cursorRingRef.current.style.transform = `translate3d(${ringPos.current.x}px, ${ringPos.current.y}px, 0) rotate(${ringAngle}deg) scaleX(${squeeze})`;
+        cursorRingRef.current.style.left = `${ringLerpX.current}px`;
+        cursorRingRef.current.style.top = `${ringLerpY.current}px`;
       }
 
-      if (cursorTrailRef.current) {
-        const dx = mousePos.current.x - trailPos.current.x;
-        const dy = mousePos.current.y - trailPos.current.y;
-        const velocity = Math.min(Math.hypot(dx, dy), 120);
-        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-        const stretch = 1 + velocity / 42;
-        const opacity = Math.min(0.16 + velocity / 260, 0.52);
-
-        cursorTrailRef.current.style.transform = `translate3d(${trailPos.current.x}px, ${trailPos.current.y}px, 0) rotate(${angle}deg) scaleX(${stretch})`;
-        cursorTrailRef.current.style.opacity = `${opacity}`;
+      const wrapEl = cursorRef.current?.parentElement;
+      if (wrapEl) {
+        wrapEl.style.left = `${cursorLerpX.current}px`;
+        wrapEl.style.top = `${cursorLerpY.current}px`;
       }
-      rafRef.current = requestAnimationFrame(animateRing);
+
+      cursorRafRef.current = requestAnimationFrame(tick);
     };
 
-    window.addEventListener("mousemove", handleMove);
-    window.addEventListener("mouseout", handleLeave);
-    rafRef.current = requestAnimationFrame(animateRing);
+    window.addEventListener("mousemove", onMouseMove, { passive: true });
+    window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mouseup", onMouseUp);
+    cursorRafRef.current = requestAnimationFrame(tick);
 
     return () => {
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseout", handleLeave);
-      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onMouseUp);
+      if (rippleTimeoutRef.current) {
+        window.clearTimeout(rippleTimeoutRef.current);
+      }
+      cancelAnimationFrame(cursorRafRef.current);
     };
   }, []);
 
@@ -1695,6 +2105,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const TARGET_SPEED = 0.45;
+    const ACCEL = 0.015;
+    const DECEL = 0.012;
+
+    const spinVinyl = () => {
+      if (audioPlaying) {
+        spinSpeedRef.current = Math.min(spinSpeedRef.current + ACCEL, TARGET_SPEED);
+      } else {
+        spinSpeedRef.current = Math.max(spinSpeedRef.current - DECEL, 0);
+      }
+
+      vinylRotationRef.current += spinSpeedRef.current;
+
+      const vinylDiscs = document.querySelectorAll<HTMLElement>(".vinyl-disc-spinner");
+      vinylDiscs.forEach((vinylDisc) => {
+        vinylDisc.style.transform = `rotate(${vinylRotationRef.current}deg)`;
+      });
+
+      vinylRafRef.current = window.requestAnimationFrame(spinVinyl);
+    };
+
+    vinylRafRef.current = window.requestAnimationFrame(spinVinyl);
+    return () => window.cancelAnimationFrame(vinylRafRef.current);
+  }, [audioPlaying]);
+
+  useEffect(() => {
     const revealTimers: number[] = [];
     const revealNodes = Array.from(
       document.querySelectorAll<HTMLElement>("[data-reveal]"),
@@ -1791,8 +2227,19 @@ export default function App() {
     if (!menuOpen) {
       setMenuSelectedIndex(pageIndex);
       setMenuFocusIndex(pageIndex);
+      setMenuInfoVisible(true);
     }
   }, [menuOpen, pageIndex]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    setMenuInfoVisible(false);
+    window.clearTimeout(menuInfoTimeoutRef.current);
+    menuInfoTimeoutRef.current = window.setTimeout(() => {
+      setMenuInfoVisible(true);
+    }, 180);
+    return () => window.clearTimeout(menuInfoTimeoutRef.current);
+  }, [menuOpen, menuSelectedIndex]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -1860,7 +2307,7 @@ export default function App() {
     const timeline = gsap.timeline();
     timeline.fromTo(
       details.querySelectorAll(
-        ".portfolio-nav-label, .portfolio-nav-title, .portfolio-nav-subtitle, .portfolio-nav-meta, .portfolio-nav-enter, .portfolio-nav-helper",
+        ".menu-gallery-info-rule, .portfolio-nav-label, .menu-gallery-info-tag, .portfolio-nav-title, .portfolio-nav-subtitle, .menu-gallery-info-desc, .menu-gallery-counter, .portfolio-nav-enter, .portfolio-nav-helper",
       ),
       { opacity: 0, y: 12 },
       {
@@ -1969,33 +2416,17 @@ export default function App() {
     <div
       className={`page-shell${storyActive ? " story-active" : ""}${revealReady ? " reveal-ready" : ""}`}
     >
+      <div className={`dir-cursor-wrap dir-cursor-wrap--${cursorState}`}>
+        <div ref={cursorRingRef} className="dir-cursor-ring" aria-hidden="true" />
+        <div ref={cursorRef} className="dir-cursor-dot" aria-hidden="true" />
+        <div ref={cursorRippleRef} className="dir-cursor-ripple" aria-hidden="true" />
+      </div>
       <div className={`site-loader${isLoaded ? " is-loaded" : ""}`} aria-hidden={isLoaded}>
         <div className="loader-mark">
           <p className="eyebrow">Loading</p>
           <div className="loader-line" />
           <p className="loader-title">Pranav&apos;s Portfolio</p>
         </div>
-      </div>
-      <div
-        ref={cursorTrailRef}
-        className={`cursor-trail cursor-trail--${cursor.mode}`}
-        aria-hidden="true"
-      />
-      <div
-        ref={cursorDotRef}
-        className={`cursor-dot cursor-dot--${cursor.mode}`}
-        aria-hidden="true"
-      />
-      <div
-        ref={cursorRingRef}
-        className={`cursor-ring cursor-ring--${cursor.mode}`}
-        aria-hidden="true"
-      >
-        <span className="cursor-label" aria-hidden="true">
-          {cursor.mode === "project" ? "View" : ""}
-          {cursor.mode === "cta" ? "→" : ""}
-          {cursor.mode === "soundtrack" ? "♪" : ""}
-        </span>
       </div>
       <div className="background-media intro-background" aria-hidden="true">
         <img src={backgroundAsset} alt="" />
@@ -2152,19 +2583,29 @@ export default function App() {
                         trackRef={menuTrackRef}
                       />
                     </div>
-                    <div className="portfolio-nav-core portfolio-nav-core--inertia" ref={menuDetailsRef}>
+                    <div className={`portfolio-nav-core portfolio-nav-core--inertia${menuInfoVisible ? " is-visible" : ""}`} ref={menuDetailsRef}>
+                      <div className="menu-gallery-info-rule" aria-hidden="true" />
                       <p className="portfolio-nav-label">Current selection</p>
+                      <span className="menu-gallery-info-tag">[ {menuActiveItem.tag} ]</span>
                       <h2 className="portfolio-nav-title">{menuActiveItem.title}</h2>
                       <p className="portfolio-nav-subtitle">{menuActiveItem.subtitle}</p>
-                      <div className="portfolio-nav-meta">
-                        {String(menuSelectedIndex + 1).padStart(2, "0")} / {String(portfolioMenuItems.length).padStart(2, "0")}
+                      <p className="menu-gallery-info-desc">{menuActiveItem.description}</p>
+                      <div className="menu-gallery-counter">
+                        <span className="menu-gallery-counter-rule" aria-hidden="true" />
+                        <span className="menu-gallery-counter-text">
+                          {String(menuSelectedIndex + 1).padStart(2, "0")}
+                          <span className="menu-gallery-counter-sep"> / </span>
+                          {String(portfolioMenuItems.length).padStart(2, "0")}
+                        </span>
+                        <span className="menu-gallery-counter-rule" aria-hidden="true" />
                       </div>
                       <button
                         type="button"
                         className="portfolio-nav-enter"
                         onClick={handleMenuEnter}
+                        aria-label={`View ${menuActiveItem.title}`}
                       >
-                        {menuActiveItem.ctaLabel} <span aria-hidden="true">&rarr;</span>
+                        View {menuActiveItem.title} <span aria-hidden="true">&rarr;</span>
                       </button>
                       <p className="portfolio-nav-helper">
                         Drag to spin the gallery, then press enter to step into that chapter.
@@ -2180,65 +2621,109 @@ export default function App() {
       ) : null}
 
       {storyActive ? (
-        <button
-          type="button"
-          className={`soundtrack-toggle${audioPlaying ? " is-playing" : ""}`}
-          onClick={toggleSoundtrack}
-          aria-label={audioPlaying ? "Pause soundtrack" : "Play soundtrack"}
+        <div
+          ref={vinylPlayerRef}
+          className={`vinyl-player is-expanded${audioPlaying ? " is-playing" : ""}`}
+          aria-label="Soundtrack player"
         >
-          <span className="soundtrack-label">Soundtrack</span>
-          <span className="soundtrack-bars" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </span>
-          <span className="soundtrack-state">
-            {audioPlaying ? "Pause" : "Play"}
-          </span>
-        </button>
+          <div className="vinyl-expanded-panel" aria-hidden="false">
+            <div className="vinyl-full-disc-wrap">
+              <div className="vinyl-sleeve-clip">
+                <div className="vinyl-sleeve">
+                  <div className="vinyl-sleeve-art">
+                    <div className="vinyl-sleeve-gradient" />
+                    <div className="vinyl-sleeve-title-block">
+                      <span className="vinyl-sleeve-artist">{albumData.artist}</span>
+                      <span className="vinyl-sleeve-name">{albumData.title}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className={`vinyl-full-disc${audioPlaying ? " is-out" : ""}`}>
+                <div ref={vinylDiscRef} className="vinyl-disc-spinner">
+                  <div className="vinyl-disc vinyl-disc--large">
+                    <div className="vinyl-groove vinyl-groove--1" />
+                    <div className="vinyl-groove vinyl-groove--2" />
+                    <div className="vinyl-groove vinyl-groove--3" />
+                    <div className="vinyl-groove vinyl-groove--4" />
+                    <div className="vinyl-groove vinyl-groove--5" />
+                    <div className="vinyl-groove vinyl-groove--6" />
+                    <div className="vinyl-sheen" aria-hidden="true" />
+                    <div className="vinyl-center-label vinyl-center-label--large">
+                      <span className="vinyl-label-title">{albumData.title}</span>
+                      <span className="vinyl-center-dot" />
+                      <span className="vinyl-label-artist">{albumData.artist}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="vinyl-controls">
+              <div className="vinyl-track-info">
+                <span className="vinyl-track-title">{albumData.title}</span>
+                <span className="vinyl-track-artist">{albumData.artist}</span>
+              </div>
+
+              <button
+                className="vinyl-play-btn"
+                onClick={toggleSoundtrack}
+                aria-label={audioPlaying ? "Pause soundtrack" : "Play soundtrack"}
+                disabled={!audioReady}
+              >
+                {audioPlaying ? (
+                  <svg width="14" height="16" viewBox="0 0 14 16" fill="none" aria-hidden="true">
+                    <rect x="0" y="0" width="4" height="16" rx="1" fill="currentColor" />
+                    <rect x="10" y="0" width="4" height="16" rx="1" fill="currentColor" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="13"
+                    height="15"
+                    viewBox="0 0 13 15"
+                    fill="none"
+                    style={{ marginLeft: "2px" }}
+                    aria-hidden="true"
+                  >
+                    <path d="M0 0L13 7.5L0 15V0Z" fill="currentColor" />
+                  </svg>
+                )}
+              </button>
+            </div>
+
+            <div className={`vinyl-waveform${audioPlaying ? " is-active" : ""}`} aria-hidden="true">
+              {vinylWaveBars.map((bar) => (
+                <div
+                  key={bar.key}
+                  className="vinyl-wave-bar"
+                  style={
+                    {
+                      animationDelay: bar.delay,
+                      "--bar-max": bar.max,
+                      "--bar-min": bar.min,
+                    } as CSSProperties
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        </div>
       ) : null}
 
       <header className="landing-stage">
         <div className="landing-copy" data-reveal>
-          <div className="landing-kicker">
-            <span
-              className="kicker-line draw-line"
-              data-reveal
-              data-reveal-delay={200}
-            />
-            <p className="eyebrow">Welcome to</p>
-            <span
-              className="kicker-line draw-line kicker-line--right"
-              data-reveal
-              data-reveal-delay={200}
-            />
-          </div>
-          <h1 data-reveal="stagger-children" data-stagger-base={120}>
-            <span
-              className="headline-line flicker-text"
-              data-stagger-child
-              data-flicker-style="neon"
-              data-flicker-speed="fast"
-              data-flicker-repeat="false"
-              data-flicker-delay="0"
-            >
-              Pranav&apos;s
-            </span>
-            <span
-              className="headline-line accent-line flicker-text"
-              data-stagger-child
-              data-flicker-style="neon"
-              data-flicker-speed="fast"
-              data-flicker-repeat="false"
-              data-flicker-delay="260"
-            >
-              Portfolio
-            </span>
-          </h1>
-          <p className="landing-text" data-reveal data-reveal-delay={400}>
-            A story about systems, ambition, migration, and the craft of making
-            software feel alive.
-          </p>
+          <ParticleText
+            text={"Welcome to\nPranav's Portfolio"}
+            fontSize={80}
+            color="rgba(255, 255, 255, 0.92)"
+            particleSize={2}
+            particleDensity={3}
+            mouseRadius={90}
+            mouseForce={7}
+            animSpeed={0.05}
+            className="hero-particle-text"
+          />
           <button
             type="button"
             className="scroll-invite"
@@ -2254,6 +2739,9 @@ export default function App() {
       <main className="layout" aria-hidden={!storyActive || !revealReady}>
         {storyActive ? (
           <div className="story-shell">
+            <div className="story-visit-counter" aria-label="Visit count">
+              <VisitCounter />
+            </div>
             {activePage === "story" ? (
               <>
                 <section className="intro-section">
@@ -2286,6 +2774,7 @@ export default function App() {
                       </div>
                     </aside>
                   </div>
+                  <ClippedGallery />
                   <nav className="inline-actions" aria-label="Portfolio navigation">
                     <button
                       type="button"
@@ -2441,11 +2930,7 @@ export default function App() {
                   data-reveal-delay={0}
                   style={{ height: "1px", background: "var(--line-strong)", marginBottom: "0" }}
                 />
-                <InertiaGallery
-                  onViewProject={(index) => {
-                    console.log("View project:", index);
-                  }}
-                />
+                <MilestoneTimeline />
               </section>
             ) : null}
 
@@ -2475,54 +2960,7 @@ export default function App() {
                       taste.
                     </p>
                   </div>
-                  <div className="contact-board" aria-label="Contact options">
-                    <a
-                      href="https://www.linkedin.com/in/pranavchopdekar/"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="contact-link"
-                      data-reveal
-                      data-reveal-delay={0}
-                    >
-                      LinkedIn <span aria-hidden="true">&rarr;</span>
-                    </a>
-                    <a
-                      href="https://github.com/Whauv"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="contact-link"
-                      data-reveal
-                      data-reveal-delay={90}
-                    >
-                      GitHub <span aria-hidden="true">&rarr;</span>
-                    </a>
-                    <a
-                      href="mailto:pranav20022018@outlook.com"
-                      className="contact-link"
-                      data-reveal
-                      data-reveal-delay={180}
-                    >
-                      pranav20022018@outlook.com <span aria-hidden="true">&rarr;</span>
-                    </a>
-                    <div
-                      className="contact-link contact-link-static"
-                      data-reveal
-                      data-reveal-delay={270}
-                    >
-                      Add your phone number here <span aria-hidden="true">&rarr;</span>
-                    </div>
-                    <div className="contact-script">
-                      <p className="contact-script-label">Best opening line</p>
-                      <p>
-                        "I saw the portfolio story and wanted to talk about what
-                        you&apos;re building next."
-                      </p>
-                      <p className="contact-script-meta">
-                        Phone number slot is ready whenever you want me to place
-                        it into the contact scene.
-                      </p>
-                    </div>
-                  </div>
+                  <ChatForm />
                 </div>
               </section>
             ) : null}
