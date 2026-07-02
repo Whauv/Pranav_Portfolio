@@ -1,46 +1,47 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchGitHubRepos, repoToTimelineStep } from "../lib/github";
+import { useEffect, useRef, useState } from "react";
+import {
+  FALLBACK_TIMELINE_STEPS,
+  fetchGitHubTimelineSteps,
+  type TimelineStep,
+} from "../lib/github";
 
-interface TimelineStep {
-  id: string;
-  year: string;
-  label: string;
-  emoji: string;
-  description: string;
-  tag: string;
-  url: string;
-  githubUrl: string;
-  stars: number;
-  topics: string[];
-  createdAt: string;
-}
-
-const NODE_R = 24;
-const NODE_SPACING = 160;
-const ARC_HEIGHT = 48;
-const TRACK_PADDING = 60;
+const NODE_RADIUS = 18;
+const ACTIVE_NODE_RADIUS = 24;
+const STEP_GAP = 132;
+const TRACK_PADDING = 72;
+const ARC_RISE = 22;
+const LABEL_YEAR_OFFSET = 22;
+const LABEL_NAME_OFFSET = 38;
 
 export function MilestoneTimeline() {
   const [steps, setSteps] = useState<TimelineStep[]>([]);
-  const [activeIdx, setActiveIdx] = useState(0);
-  const [prevIdx, setPrevIdx] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [previousIndex, setPreviousIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [hasEntered, setHasEntered] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const sectionRef = useRef<HTMLElement>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    fetchGitHubRepos()
-      .then((repos) => {
-        setSteps(repos.map((repo, i) => repoToTimelineStep(repo, i)));
+    let isMounted = true;
+
+    void fetchGitHubTimelineSteps()
+      .then((nextSteps) => {
+        if (!isMounted) return;
+        setSteps(nextSteps.length > 0 ? nextSteps : FALLBACK_TIMELINE_STEPS);
         setIsLoading(false);
       })
       .catch(() => {
-        setSteps(FALLBACK_STEPS);
+        if (!isMounted) return;
+        setSteps(FALLBACK_TIMELINE_STEPS);
         setIsLoading(false);
       });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -53,357 +54,325 @@ export function MilestoneTimeline() {
       { threshold: 0.2 },
     );
 
-    if (sectionRef.current) {
-      observer.observe(sectionRef.current);
+    const section = sectionRef.current;
+    if (section) {
+      observer.observe(section);
     }
 
     return () => observer.disconnect();
   }, []);
 
-  const advance = useCallback(() => {
-    setActiveIdx((prev) => {
-      if (steps.length === 0) return 0;
-      const next = (prev + 1) % steps.length;
-      setPrevIdx(prev);
-      return next;
-    });
-  }, [steps.length]);
-
   useEffect(() => {
-    if (!isPlaying || steps.length < 2) return undefined;
+    if (!isPlaying || steps.length < 2) {
+      return undefined;
+    }
 
-    timerRef.current = setTimeout(advance, 3200);
+    timerRef.current = setTimeout(() => {
+      setActiveIndex((currentIndex) => {
+        const nextIndex = (currentIndex + 1) % steps.length;
+        setPreviousIndex(currentIndex);
+        return nextIndex;
+      });
+    }, 3200);
 
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
     };
-  }, [activeIdx, isPlaying, advance, steps.length]);
+  }, [activeIndex, isPlaying, steps.length]);
 
-  const goTo = (idx: number) => {
+  const activateStep = (nextIndex: number) => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
     }
-    setPrevIdx(activeIdx);
-    setActiveIdx(idx);
+
+    setPreviousIndex(activeIndex);
+    setActiveIndex(nextIndex);
     setIsPlaying(false);
   };
 
-  const svgWidth =
-    steps.length > 0
-      ? TRACK_PADDING * 2 + (steps.length - 1) * NODE_SPACING
-      : 600;
-  const svgHeight = ARC_HEIGHT + NODE_R * 2 + 52;
+  const handlePrevious = () => {
+    if (steps.length === 0) return;
+    const nextIndex = (activeIndex - 1 + steps.length) % steps.length;
+    activateStep(nextIndex);
+  };
 
-  const nodeX = (i: number) => TRACK_PADDING + i * NODE_SPACING;
-  const nodeY = svgHeight - NODE_R - 32;
+  const handleNext = () => {
+    if (steps.length === 0) return;
+    const nextIndex = (activeIndex + 1) % steps.length;
+    activateStep(nextIndex);
+  };
+
+  const trackWidth =
+    TRACK_PADDING * 2 + Math.max(0, steps.length - 1) * STEP_GAP;
+  const trackHeight = 110;
+  const baselineY = 44;
+
+  const nodeX = (i: number) => TRACK_PADDING + i * STEP_GAP;
 
   const arcPath = (i: number) => {
     const x1 = nodeX(i);
     const x2 = nodeX(i + 1);
-    const y = nodeY;
-    const cx = (x1 + x2) / 2;
-    const cy = y - ARC_HEIGHT;
-    return `M ${x1} ${y} Q ${cx} ${cy} ${x2} ${y}`;
+    const mid = (x1 + x2) / 2;
+    return `M ${x1} ${baselineY} Q ${mid} ${baselineY - ARC_RISE} ${x2} ${baselineY}`;
   };
 
-  const activeStep = steps[activeIdx];
+  const activeStep = steps[activeIndex];
 
   return (
     <section
       ref={sectionRef}
-      className={`tl-section${hasEntered ? " is-visible" : ""}`}
+      className={`mtl-section${hasEntered ? " is-visible" : ""}`}
     >
-      <div className="tl-header">
-        <span className="tl-eyebrow">github.com/Whauv</span>
-        <h2 className="tl-title">Project Timeline</h2>
+      <div className="mtl-header">
+        <span className="mtl-eyebrow">github.com/Whauv</span>
+        <h2 className="mtl-title">Project Timeline</h2>
       </div>
 
       {isLoading ? (
-        <div className="tl-loading-wrap">
-          <div className="tl-loading-bar" />
-          <p className="tl-loading-text">Loading from GitHub...</p>
+        <div className="mtl-loading">
+          <div className="mtl-loading-line" />
+          <p className="mtl-loading-text">Loading timeline…</p>
         </div>
-      ) : (
+      ) : activeStep ? (
         <>
-          <div className="tl-track-scroll">
-            <div className="tl-track-inner" style={{ width: svgWidth }}>
-              <svg
-                className="tl-svg"
-                width={svgWidth}
-                height={svgHeight}
-                viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                overflow="visible"
-              >
-                <defs>
-                  <linearGradient id="arc-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="rgba(101,74,213,0.9)" />
-                    <stop offset="100%" stopColor="rgba(200,169,110,0.95)" />
-                  </linearGradient>
-                  <filter id="node-glow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
-                    <feMerge>
-                      <feMergeNode in="blur" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
-                </defs>
-
-                {steps.slice(0, -1).map((_, i) => {
-                  const isFilled = i < activeIdx;
-                  const isActiveArc = i === activeIdx - 1 && activeIdx !== prevIdx;
-
-                  return (
-                    <path
-                      key={`arc-${i}`}
-                      d={arcPath(i)}
-                      fill="none"
-                      stroke={isFilled ? "url(#arc-gradient)" : "rgba(255,255,255,0.1)"}
-                      strokeWidth={isFilled ? 2 : 1.5}
-                      strokeLinecap="round"
-                      className={isActiveArc ? "tl-arc-active" : undefined}
-                    />
-                  );
-                })}
-
-                {steps.map((step, i) => {
-                  const x = nodeX(i);
-                  const y = nodeY;
-                  const isActive = i === activeIdx;
-                  const isPast = i < activeIdx;
-                  const dateLabel = new Date(step.createdAt)
-                    .toLocaleDateString("en-US", {
-                      month: "short",
-                      year: "numeric",
-                    })
-                    .toUpperCase()
-                    .replace(",", "");
-
-                  return (
-                    <g
-                      key={`node-${step.id}`}
-                      className={`tl-node-g${isActive ? " is-active" : ""}${isPast ? " is-past" : ""}`}
-                      onClick={() => goTo(i)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          goTo(i);
-                        }
-                      }}
-                      aria-label={`Open timeline step ${step.label}`}
+          <div className="mtl-track-wrap">
+            <div className="mtl-track-scroll">
+              <div className="mtl-track-inner" style={{ width: trackWidth }}>
+                <svg
+                  className="mtl-svg"
+                  width={trackWidth}
+                  height={trackHeight}
+                  viewBox={`0 0 ${trackWidth} ${trackHeight}`}
+                >
+                  <defs>
+                    <filter
+                      id="mtl-node-glow"
+                      x="-120%"
+                      y="-120%"
+                      width="340%"
+                      height="340%"
                     >
-                      {isActive ? (
-                        <circle
-                          cx={x}
-                          cy={y}
-                          r={NODE_R + 8}
-                          fill="none"
-                          stroke="rgba(200,169,110,0.2)"
-                          strokeWidth="1"
-                          className="tl-pulse-ring"
-                        />
-                      ) : null}
-
-                      <circle
-                        cx={x}
-                        cy={y}
-                        r={isActive ? NODE_R + 2 : NODE_R}
-                        fill={
-                          isActive
-                            ? "rgba(200,169,110,0.15)"
-                            : isPast
-                              ? "rgba(200,169,110,0.07)"
-                              : "rgba(14,8,32,0.9)"
-                        }
-                        stroke={
-                          isActive
-                            ? "rgba(200,169,110,0.85)"
-                            : isPast
-                              ? "rgba(200,169,110,0.35)"
-                              : "rgba(255,255,255,0.15)"
-                        }
-                        strokeWidth={isActive ? 1.5 : 1}
-                        filter={isActive ? "url(#node-glow)" : undefined}
-                        className="tl-node-circle"
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="4.5" result="blur" />
+                      <feColorMatrix
+                        in="blur"
+                        type="matrix"
+                        values="1 0 0 0 0  0.8 0 0 0 0  0.35 0 0 0 0  0 0 0 1 0"
+                        result="glow"
                       />
+                      <feMerge>
+                        <feMergeNode in="glow" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
 
-                      <text
-                        x={x}
-                        y={y}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fontSize={isActive ? "18" : "15"}
-                        className="tl-node-emoji"
-                      >
-                        {step.emoji}
-                      </text>
+                  {steps.slice(0, -1).map((_, i) => {
+                    const isPastArc = i < activeIndex;
+                    const isActiveIncomingArc =
+                      i === activeIndex - 1 && activeIndex !== previousIndex;
 
-                      <text
-                        x={x}
-                        y={y + NODE_R + 18}
-                        textAnchor="middle"
-                        className="tl-node-year"
-                      >
-                        {dateLabel}
-                      </text>
+                    return (
+                      <path
+                        key={`arc-${steps[i]?.id ?? i}`}
+                        d={arcPath(i)}
+                        fill="none"
+                        stroke={
+                          isPastArc
+                            ? "rgba(200,169,110,0.7)"
+                            : "rgba(255,255,255,0.12)"
+                        }
+                        strokeWidth={isPastArc ? 1.9 : 1.25}
+                        strokeLinecap="round"
+                        className={isActiveIncomingArc ? "mtl-arc-active" : undefined}
+                      />
+                    );
+                  })}
 
-                      <text
-                        x={x}
-                        y={y + NODE_R + 34}
-                        textAnchor="middle"
-                        className={`tl-node-label${isActive ? " is-active" : ""}`}
+                  {steps.map((step, index) => {
+                    const x = nodeX(index);
+                    const isActive = index === activeIndex;
+                    const isPast = index < activeIndex;
+                    const yearLabel = new Date(step.createdAt)
+                      .toLocaleDateString("en-US", {
+                        month: "short",
+                        year: "numeric",
+                      })
+                      .toUpperCase()
+                      .replace(",", "");
+
+                    return (
+                      <g
+                        key={step.id}
+                        onClick={() => activateStep(index)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            activateStep(index);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open timeline step ${step.label}`}
+                        aria-current={isActive ? "true" : undefined}
+                        data-cursor="hover"
                       >
-                        {step.label.length > 14 ? `${step.label.slice(0, 13)}…` : step.label}
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
+                        {isActive ? (
+                          <circle
+                            className="mtl-pulse-ring"
+                            cx={x}
+                            cy={baselineY}
+                            r={ACTIVE_NODE_RADIUS + 6}
+                            fill="none"
+                            stroke="rgba(200,169,110,0.22)"
+                            strokeWidth="1"
+                          />
+                        ) : null}
+
+                        <circle
+                          className="mtl-node-circle"
+                          cx={x}
+                          cy={baselineY}
+                          r={isActive ? ACTIVE_NODE_RADIUS : NODE_RADIUS}
+                          fill={
+                            isActive
+                              ? "rgba(200,169,110,0.18)"
+                              : isPast
+                                ? "rgba(200,169,110,0.08)"
+                                : "rgba(8,6,18,0.42)"
+                          }
+                          stroke={
+                            isActive
+                              ? "rgba(200,169,110,1)"
+                              : isPast
+                                ? "rgba(200,169,110,0.42)"
+                                : "rgba(255,255,255,0.18)"
+                          }
+                          strokeWidth={isActive ? 1.8 : 1.2}
+                          filter={isActive ? "url(#mtl-node-glow)" : undefined}
+                        />
+
+                        <text
+                          x={x}
+                          y={baselineY}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontSize={isActive ? "15" : "13"}
+                        >
+                          {step.emoji}
+                        </text>
+
+                        <text
+                          x={x}
+                          y={baselineY + LABEL_YEAR_OFFSET}
+                          textAnchor="middle"
+                          className="mtl-year"
+                        >
+                          {yearLabel}
+                        </text>
+
+                        <text
+                          x={x}
+                          y={baselineY + LABEL_NAME_OFFSET}
+                          textAnchor="middle"
+                          className={`mtl-name${isActive ? " is-active" : ""}`}
+                        >
+                          {step.label}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
             </div>
           </div>
 
-          {activeStep ? (
-            <div className="tl-detail" key={activeStep.id}>
-              <div className="tl-detail-inner">
-                <div className="tl-detail-meta">
-                  <span className="tl-detail-tag">{activeStep.tag}</span>
-                  <span className="tl-detail-year">{activeStep.year}</span>
+          <div key={activeStep.id} className="mtl-detail">
+            <div className="mtl-detail-panel">
+              <div className="mtl-detail-meta">
+                <span className="mtl-chip">{activeStep.tag}</span>
+                <span className="mtl-chip mtl-chip--muted">{activeStep.year}</span>
+              </div>
+
+              <h3 className="mtl-detail-title">{activeStep.label}</h3>
+              <div className="mtl-detail-summary-block" aria-live="polite">
+                <span className="mtl-detail-summary-label">Project overview</span>
+                <p className="mtl-detail-desc">{activeStep.description}</p>
+              </div>
+
+              {activeStep.topics?.length > 0 ? (
+                <div className="mtl-topics">
+                  {activeStep.topics.slice(0, 4).map((topic) => (
+                    <span key={topic} className="mtl-topic">
+                      {topic}
+                    </span>
+                  ))}
                 </div>
+              ) : null}
 
-                <h3 className="tl-detail-title">{activeStep.label}</h3>
-                <p className="tl-detail-desc">{activeStep.description}</p>
-
-                {activeStep.topics?.length > 0 ? (
-                  <div className="tl-detail-topics">
-                    {activeStep.topics.slice(0, 4).map((topic) => (
-                      <span key={topic} className="tl-topic">
-                        {topic}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="tl-detail-links">
+              <div className="mtl-actions">
+                <a
+                  className="mtl-btn"
+                  href={activeStep.githubUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-cursor="hover"
+                >
+                  GitHub ↗
+                </a>
+                {activeStep.url !== activeStep.githubUrl ? (
                   <a
-                    href={activeStep.githubUrl}
+                    className="mtl-btn mtl-btn--accent"
+                    href={activeStep.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="tl-btn"
                     data-cursor="hover"
                   >
-                    GitHub ↗
+                    Live ↗
                   </a>
-                  {activeStep.url !== activeStep.githubUrl && activeStep.url ? (
-                    <a
-                      href={activeStep.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="tl-btn tl-btn--gold"
-                      data-cursor="hover"
-                    >
-                      Live ↗
-                    </a>
-                  ) : null}
-                </div>
+                ) : null}
               </div>
             </div>
-          ) : null}
+          </div>
 
-          <div className="tl-controls">
+          <div className="mtl-controls">
             <button
-              className="tl-ctrl-btn"
-              onClick={() => goTo(Math.max(0, activeIdx - 1))}
-              disabled={activeIdx === 0}
+              className="mtl-icon-btn"
+              onClick={handlePrevious}
               aria-label="Previous step"
+              type="button"
               data-cursor="hover"
             >
               ←
             </button>
-
             <button
-              className={`tl-ctrl-play${isPlaying ? " is-playing" : ""}`}
+              className={`mtl-auto${isPlaying ? " is-playing" : ""}`}
               onClick={() => setIsPlaying((playing) => !playing)}
+              aria-pressed={isPlaying}
               aria-label={isPlaying ? "Pause" : "Play"}
+              type="button"
               data-cursor="hover"
             >
-              <span className="tl-ctrl-play-icon">{isPlaying ? "⏸" : "▶"}</span>
-              <span>{isPlaying ? "Auto" : "Paused"}</span>
+              <span>{isPlaying ? "⏸" : "▶"}</span>
+              <span>Auto</span>
             </button>
-
             <button
-              className="tl-ctrl-btn"
-              onClick={() => goTo(Math.min(steps.length - 1, activeIdx + 1))}
-              disabled={activeIdx === steps.length - 1}
+              className="mtl-icon-btn"
+              onClick={handleNext}
               aria-label="Next step"
+              type="button"
               data-cursor="hover"
             >
               →
             </button>
           </div>
 
-          <p className="tl-counter">
-            {steps.length === 0 ? 0 : activeIdx + 1} / {steps.length}
+          <p className="mtl-counter">
+            {activeIndex + 1} / {steps.length}
           </p>
         </>
-      )}
+      ) : null}
     </section>
   );
 }
-
-const FALLBACK_STEPS: TimelineStep[] = [
-  {
-    id: "fb1",
-    year: "2021",
-    label: "2D Game",
-    emoji: "🌱",
-    description: "GitHub repository from the ongoing build journey.",
-    tag: "Python",
-    url: "https://github.com/Whauv",
-    githubUrl: "https://github.com/Whauv",
-    stars: 0,
-    topics: [],
-    createdAt: "2021-09-01",
-  },
-  {
-    id: "fb2",
-    year: "2022",
-    label: "Senseworth",
-    emoji: "⚙️",
-    description: "A web classification tool to classify tweets into true or false with accuracy.",
-    tag: "React",
-    url: "https://github.com/Whauv",
-    githubUrl: "https://github.com/Whauv",
-    stars: 0,
-    topics: [],
-    createdAt: "2022-09-01",
-  },
-  {
-    id: "fb3",
-    year: "2023",
-    label: "Third Eye",
-    emoji: "📷",
-    description: "Suspicious activity detecting camera using Python, OpenCV and numpy.",
-    tag: "Python",
-    url: "https://github.com/Whauv",
-    githubUrl: "https://github.com/Whauv",
-    stars: 0,
-    topics: [],
-    createdAt: "2023-04-01",
-  },
-  {
-    id: "fb4",
-    year: "2023",
-    label: "Portfolio",
-    emoji: "✨",
-    description: "Personal portfolio — React, TypeScript, WebGL particles, spring physics.",
-    tag: "TypeScript",
-    url: "https://github.com/Whauv",
-    githubUrl: "https://github.com/Whauv",
-    stars: 0,
-    topics: ["react", "typescript", "vite"],
-    createdAt: "2023-06-01",
-  },
-];
